@@ -25,13 +25,38 @@ impl Split {
         1.0 - sum_of_squares
     }
 
+    fn split_score(&self, filter_mask: &BooleanArray) -> f64 {
+        let left_len = filter_mask.values().iter().filter(|&value| value).count();
+        let total_len = filter_mask.len();
+        let right_len = total_len - left_len;
+
+        let left_wgt = left_len as f64 / total_len as f64;
+        let right_wgt = right_len as f64 / total_len as f64;
+
+        let left_score = left_wgt
+            * self.gini(
+                filter(&self.target, &filter_mask)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref()
+                    .unwrap(),
+            );
+        let right_score = right_wgt
+            * self.gini(
+                filter(&self.target, &filter_mask)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref()
+                    .unwrap(),
+            );
+
+        left_score + right_score
+    }
+
     fn best_split<D>(&self) -> Option<(BooleanArray, <D as ArrowPrimitiveType>::Native)>
     where
         D: ArrowNumericType,
     {
-        if self.gini(self.target.as_any().downcast_ref().unwrap()) == 0. {
-            return None;
-        }
         let data_ref = self
             .data
             .as_any()
@@ -48,34 +73,9 @@ impl Split {
                         .map(|&i| i < *split_point)
                         .collect::<Vec<bool>>(),
                 );
-
-                let left_len = filter_mask.values().iter().filter(|&value| value).count();
-                let total_len = filter_mask.len();
-                let right_len = total_len - left_len;
-
-                let left_wgt = left_len as f64 / total_len as f64;
-                let right_wgt = right_len as f64 / total_len as f64;
-
-                let left_gini = left_wgt
-                    * self.gini(
-                        filter(&self.target, &filter_mask)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref()
-                            .unwrap(),
-                    );
-                let right_gini = right_wgt
-                    * self.gini(
-                        filter(&self.target, &filter_mask)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref()
-                            .unwrap(),
-                    );
-
-                let weighted_gini = left_gini + right_gini;
-
-                (weighted_gini, filter_mask, *split_point)
+                let split_score =
+                    self.split_score(&filter_mask);
+                (split_score, filter_mask, *split_point)
             })
             .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
