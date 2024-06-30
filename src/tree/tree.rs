@@ -1,7 +1,6 @@
-use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray, RecordBatch};
-use arrow::compute::{self, filter, not, sort_to_indices};
+use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::compute::{filter, not};
 use arrow::datatypes::{ArrowNativeTypeOp, ArrowNumericType, ArrowPrimitiveType, Float64Type};
-use std::sync::Arc;
 
 #[derive(Debug)]
 struct Split {
@@ -35,22 +34,18 @@ impl Split {
         }
         let data_ref = self
             .data
-            .as_ref()
             .as_any()
             .downcast_ref::<PrimitiveArray<D>>()
             .unwrap();
         let mut best_gini_index = f64::MAX;
         let mut best_mask = None;
-        let sorted_indices = sort_to_indices(self.data.as_ref(), None, None).expect("Cannot sort");
         let mut threshold = <D as ArrowPrimitiveType>::Native::MAX_TOTAL_ORDER;
-        for current_idx in sorted_indices.values() {
-            let idx = *current_idx as usize;
-            let split_point = data_ref.value(idx);
+        for split_point in data_ref.values() {
             let filter_mask = BooleanArray::from(
                 data_ref
                     .values()
                     .into_iter()
-                    .map(|&i| i < split_point)
+                    .map(|&i| i < *split_point)
                     .collect::<Vec<bool>>(),
             );
 
@@ -83,7 +78,7 @@ impl Split {
             if weighted_gini < best_gini_index {
                 best_gini_index = weighted_gini;
                 best_mask = Some(filter_mask);
-                threshold = split_point;
+                threshold = *split_point;
             }
         }
 
@@ -145,6 +140,7 @@ mod tests {
 
     use super::*;
     use arrow::array::Float64Array;
+    use std::sync::Arc;
 
     #[test]
     fn gini() {
