@@ -1,6 +1,6 @@
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::compute::{filter, not};
-use arrow::datatypes::{ArrowNativeTypeOp, ArrowNumericType, ArrowPrimitiveType, Float64Type};
+use arrow::datatypes::{ArrowNumericType, ArrowPrimitiveType, Float64Type};
 
 #[derive(Debug)]
 struct Split {
@@ -53,7 +53,9 @@ impl Split {
         left_score + right_score
     }
 
-    fn best_split<D>(&self) -> Option<(BooleanArray, <D as ArrowPrimitiveType>::Native)>
+    fn split_points_iterator<D>(
+        &self,
+    ) -> impl Iterator<Item = (f64, BooleanArray, <D as ArrowPrimitiveType>::Native)> + '_
     where
         D: ArrowNumericType,
     {
@@ -62,22 +64,25 @@ impl Split {
             .as_any()
             .downcast_ref::<PrimitiveArray<D>>()
             .unwrap();
-        let best_split = data_ref
-            .values()
-            .iter()
-            .map(|split_point| {
-                let filter_mask = BooleanArray::from(
-                    data_ref
-                        .values()
-                        .iter()
-                        .map(|&i| i < *split_point)
-                        .collect::<Vec<bool>>(),
-                );
-                let split_score = self.split_score(&filter_mask);
-                (split_score, filter_mask, *split_point)
-            })
+        data_ref.values().iter().map(|split_point| {
+            let filter_mask = BooleanArray::from(
+                data_ref
+                    .values()
+                    .iter()
+                    .map(|&i| i < *split_point)
+                    .collect::<Vec<bool>>(),
+            );
+            let split_score = self.split_score(&filter_mask);
+            (split_score, filter_mask, *split_point)
+        })
+    }
+    fn best_split<D>(&self) -> Option<(BooleanArray, <D as ArrowPrimitiveType>::Native)>
+    where
+        D: ArrowNumericType,
+    {
+        let best_split = self
+            .split_points_iterator::<D>()
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-
         best_split.map(|(_, mask, threshold)| (mask, threshold))
     }
 }
@@ -147,7 +152,7 @@ mod tests {
 
         // Calculate Gini index
         let gini = node.gini(node.target.as_any().downcast_ref().unwrap());
-        let expected_gini = - ( 1.0 - (3.0 / 5.0 * 3.0 / 5.0 + 2.0 / 5.0 * 2.0 / 5.0) ); // 0.48
+        let expected_gini = -(1.0 - (3.0 / 5.0 * 3.0 / 5.0 + 2.0 / 5.0 * 2.0 / 5.0)); // 0.48
         let delta = 0.001;
 
         assert!(
