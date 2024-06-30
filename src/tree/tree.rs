@@ -22,7 +22,7 @@ impl Split {
             acc + proportion * proportion
         });
 
-        1.0 - sum_of_squares
+        sum_of_squares - 1.
     }
 
     fn split_score(&self, filter_mask: &BooleanArray) -> f64 {
@@ -73,11 +73,10 @@ impl Split {
                         .map(|&i| i < *split_point)
                         .collect::<Vec<bool>>(),
                 );
-                let split_score =
-                    self.split_score(&filter_mask);
+                let split_score = self.split_score(&filter_mask);
                 (split_score, filter_mask, *split_point)
             })
-            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
         best_split.map(|(_, mask, threshold)| (mask, threshold))
     }
@@ -148,7 +147,7 @@ mod tests {
 
         // Calculate Gini index
         let gini = node.gini(node.target.as_any().downcast_ref().unwrap());
-        let expected_gini = 1.0 - (3.0 / 5.0 * 3.0 / 5.0 + 2.0 / 5.0 * 2.0 / 5.0); // 0.48
+        let expected_gini = - ( 1.0 - (3.0 / 5.0 * 3.0 / 5.0 + 2.0 / 5.0 * 2.0 / 5.0) ); // 0.48
         let delta = 0.001;
 
         assert!(
