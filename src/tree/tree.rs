@@ -37,52 +37,49 @@ impl Split {
             .as_any()
             .downcast_ref::<PrimitiveArray<D>>()
             .unwrap();
-        let mut best_gini_index = f64::MAX;
-        let mut best_mask = None;
-        let mut threshold = <D as ArrowPrimitiveType>::Native::MAX_TOTAL_ORDER;
-        for split_point in data_ref.values() {
-            let filter_mask = BooleanArray::from(
-                data_ref
-                    .values()
-                    .into_iter()
-                    .map(|&i| i < *split_point)
-                    .collect::<Vec<bool>>(),
-            );
-
-            let left_len = filter_mask.values().iter().filter(|&value| value).count();
-            let total_len = filter_mask.len();
-            let right_len = filter_mask.len() - left_len;
-
-            let left_wgt = left_len as f64 / total_len as f64;
-            let right_wgt = right_len as f64 / total_len as f64;
-
-            let left_gini = left_wgt
-                * self.gini(
-                    filter(&self.target, &filter_mask)
-                        .unwrap()
-                        .as_any()
-                        .downcast_ref()
-                        .unwrap(),
-                );
-            let right_gini = right_wgt
-                * self.gini(
-                    filter(&self.target, &filter_mask)
-                        .unwrap()
-                        .as_any()
-                        .downcast_ref()
-                        .unwrap(),
+        let best_split = data_ref
+            .values()
+            .iter()
+            .map(|split_point| {
+                let filter_mask = BooleanArray::from(
+                    data_ref
+                        .values()
+                        .iter()
+                        .map(|&i| i < *split_point)
+                        .collect::<Vec<bool>>(),
                 );
 
-            let weighted_gini = left_gini + right_gini;
+                let left_len = filter_mask.values().iter().filter(|&value| value).count();
+                let total_len = filter_mask.len();
+                let right_len = total_len - left_len;
 
-            if weighted_gini < best_gini_index {
-                best_gini_index = weighted_gini;
-                best_mask = Some(filter_mask);
-                threshold = *split_point;
-            }
-        }
+                let left_wgt = left_len as f64 / total_len as f64;
+                let right_wgt = right_len as f64 / total_len as f64;
 
-        best_mask.and_then(|l| Some((l, threshold)))
+                let left_gini = left_wgt
+                    * self.gini(
+                        filter(&self.target, &filter_mask)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref()
+                            .unwrap(),
+                    );
+                let right_gini = right_wgt
+                    * self.gini(
+                        filter(&self.target, &filter_mask)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref()
+                            .unwrap(),
+                    );
+
+                let weighted_gini = left_gini + right_gini;
+
+                (weighted_gini, filter_mask, *split_point)
+            })
+            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        best_split.map(|(_, mask, threshold)| (mask, threshold))
     }
 }
 
