@@ -57,7 +57,7 @@ impl Split {
         &self,
     ) -> impl Iterator<Item = (f64, BooleanArray, <D as ArrowPrimitiveType>::Native)> + '_
     where
-        D: ArrowNumericType,
+        D: ArrowPrimitiveType,
     {
         let data_ref = self
             .data
