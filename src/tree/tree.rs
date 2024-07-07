@@ -1,8 +1,8 @@
+use super::scores::{Score, ScoreFunction};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::compute::{filter, filter_record_batch, not};
 use arrow::datatypes::{ArrowPrimitiveType, DataType, Float32Type, Float64Type, Int32Type};
 use arrow::record_batch::RecordBatch;
-use std::collections::HashMap;
 use std::usize;
 
 #[derive(Debug, PartialEq)]
@@ -50,49 +50,6 @@ struct Split {
 }
 
 impl Split {
-    fn gini(&self, target: &BooleanArray) -> f64 {
-        let mut class_counts = HashMap::new();
-        for label in target.values().iter().map(|x| x) {
-            *class_counts.entry(label).or_insert(0) += 1;
-        }
-        let total = self.target.len() as f64;
-
-        let sum_of_squares = class_counts.values().fold(0.0, |acc, &count| {
-            let proportion = count as f64 / total;
-            acc + proportion * proportion
-        });
-
-        sum_of_squares - 1.
-    }
-
-    fn split_score(&self, filter_mask: &BooleanArray) -> f64 {
-        let left_len = filter_mask.values().iter().filter(|&value| value).count();
-        let total_len = filter_mask.len();
-        let right_len = total_len - left_len;
-
-        let left_wgt = left_len as f64 / total_len as f64;
-        let right_wgt = right_len as f64 / total_len as f64;
-
-        let left_score = left_wgt
-            * self.gini(
-                filter(&self.target, &filter_mask)
-                    .unwrap()
-                    .as_any()
-                    .downcast_ref::<BooleanArray>()
-                    .expect("Cannot down cast to boolean"),
-            );
-        let right_score = right_wgt
-            * self.gini(
-                filter(&self.target, &filter_mask)
-                    .expect("Cannot filter")
-                    .as_any()
-                    .downcast_ref::<BooleanArray>()
-                    .expect("Cannot down cast to boolean"),
-            );
-
-        left_score + right_score
-    }
-
     fn split_points_iterator(
         &self,
         column_index: usize,
@@ -124,7 +81,12 @@ impl Split {
                 _ => panic!("Invalid data type"),
             };
         possible_splits_iter.map(|(split_value, boolean_array)| {
-            let split_score = self.split_score(&boolean_array);
+            let split_score = self
+                .target
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap()
+                .split_score(&boolean_array, ScoreFunction::Gini);
             (split_score, boolean_array, split_value)
         })
     }
@@ -206,33 +168,6 @@ mod tests {
     };
     use std::sync::Arc;
 
-    #[test]
-    fn gini() {
-        let my_schema: Arc<Schema> = Arc::new(Schema::new(vec![Field::new(
-            "sample",
-            DataType::Float32,
-            false,
-        )]));
-
-        let data: ArrayRef = Arc::new(Float32Array::from(vec![1.0, 2.0]));
-        let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false]));
-        let node = Split {
-            data: RecordBatch::try_new(my_schema, vec![data]).unwrap(),
-            target,
-        };
-
-        // Calculate Gini index
-        let gini = node.gini(node.target.as_any().downcast_ref().unwrap());
-        let expected_gini = -0.5; // 0.48
-        let delta = 0.001;
-
-        assert!(
-            (gini - expected_gini).abs() < delta,
-            "Calculated Gini index is incorrect: expected {:.3}, got {:.3}",
-            expected_gini,
-            gini
-        );
-    }
     #[test]
     fn test_best_split_ints() {
         let my_schema: Arc<Schema> = Arc::new(Schema::new(vec![Field::new(
