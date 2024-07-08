@@ -83,9 +83,6 @@ impl Split {
         possible_splits_iter.map(|(split_value, boolean_array)| {
             let split_score = self
                 .target
-                .as_any()
-                .downcast_ref::<BooleanArray>()
-                .unwrap()
                 .split_score(&boolean_array, ScoreFunction::Gini);
             (split_score, boolean_array, split_value)
         })
