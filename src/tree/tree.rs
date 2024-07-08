@@ -43,64 +43,39 @@ where
         })
     }
 }
-
-struct Split {
-    target: ArrayRef,
-    data: RecordBatch,
+fn downcast_and_iter<T>(
+    data_ref: &ArrayRef,
+) -> Box<dyn Iterator<Item = (SplitValue, BooleanArray)> + '_>
+where
+    T: ArrowPrimitiveType,
+    T::Native: Into<f64>,
+{
+    let array = data_ref
+        .as_any()
+        .downcast_ref::<PrimitiveArray<T>>()
+        .unwrap();
+    Box::new(array.possible_splits_iter())
 }
 
-impl Split {
-    fn split_points_iterator(
-        &self,
-        column_index: usize,
-    ) -> impl Iterator<Item = (f64, BooleanArray, SplitValue)> + '_ {
-        let data_ref = self.data.column(column_index);
-        let possible_splits_iter: Box<dyn Iterator<Item = (SplitValue, BooleanArray)>> =
-            match data_ref.data_type() {
-                DataType::Float32 => Box::new(
-                    data_ref
-                        .as_any()
-                        .downcast_ref::<PrimitiveArray<Float32Type>>()
-                        .unwrap()
-                        .possible_splits_iter(),
-                ),
-                DataType::Float64 => Box::new(
-                    data_ref
-                        .as_any()
-                        .downcast_ref::<PrimitiveArray<Float64Type>>()
-                        .unwrap()
-                        .possible_splits_iter(),
-                ),
-                DataType::Int32 => Box::new(
-                    data_ref
-                        .as_any()
-                        .downcast_ref::<PrimitiveArray<Int32Type>>()
-                        .unwrap()
-                        .possible_splits_iter(),
-                ),
+fn best_split(data: &RecordBatch, target: ArrayRef) -> Option<(f64, usize, BooleanArray, SplitValue)> {
+    let iters = (0..data.num_columns())
+        .flat_map(|column_index| {
+            let col = data.column(column_index);
+            match col.data_type() {
+                DataType::Float32 => downcast_and_iter::<Float32Type>(col),
+                DataType::Float64 => downcast_and_iter::<Float64Type>(col),
+                DataType::Int32 => downcast_and_iter::<Int32Type>(col),
                 _ => panic!("Invalid data type"),
-            };
-        possible_splits_iter.map(|(split_value, boolean_array)| {
-            let split_score = self
-                .target
-                .split_score(&boolean_array, ScoreFunction::Gini);
-            (split_score, boolean_array, split_value)
-        })
-    }
-
-    fn best_split(&self) -> Option<(usize, BooleanArray, SplitValue)> {
-        (0..self.data.num_columns())
-            .map(|column_index| {
-                self.split_points_iterator(column_index).map(
-                    move |(split_score, filter_mask, split_value)| {
-                        (split_score, column_index, filter_mask, split_value)
-                    },
-                )
+            }
+            .map(|(split_value, filter_mask)| {
+                let split_score = target.split_score(&filter_mask, ScoreFunction::Gini);
+                (split_score, filter_mask, split_value)
             })
-            .flatten()
-            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-            .map(|(_, column_index, mask, threshold)| (column_index, mask, threshold))
-    }
+            .map(move |(split_score, filter_mask, split_value)| {
+                (split_score, column_index, filter_mask, split_value)
+            })
+        });
+        iters.max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
 }
 #[derive(Debug)]
 pub struct Tree {
@@ -129,11 +104,7 @@ impl Tree {
         if max_depth == 0 || samples.num_rows() == 0 {
             return None;
         }
-        let split = Split {
-            data: samples.clone(),
-            target: target.clone(),
-        };
-        if let Some((col_index, data_mask, th)) = split.best_split() {
+        if let Some((_, col_index, data_mask, th)) = best_split(&samples, target.clone()) {
             let tree = Tree {
                 feature_index: Some(col_index),
                 threshold: Some(th),
@@ -175,13 +146,8 @@ mod tests {
 
         let data: ArrayRef = Arc::new(Int32Array::from(vec![1, 2]));
         let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false]));
-        let nn = Split {
-            target,
-            data: RecordBatch::try_new(my_schema, vec![data]).unwrap(),
-        };
 
-        // Since best_split may return None, handle it properly
-        let (row_index, filter_mask, threshold) = nn.best_split().expect("No split found");
+        let (_, row_index, filter_mask, threshold) = best_split(&RecordBatch::try_new(my_schema, vec![data]).unwrap(), target).expect("No split found");
 
         // Verify the splits' contents are as expected
         assert_eq!(row_index, 0, "Wrong column index");
@@ -198,13 +164,9 @@ mod tests {
 
         let data: ArrayRef = Arc::new(Float32Array::from(vec![1.0, 2.0]));
         let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false]));
-        let nn = Split {
-            target,
-            data: RecordBatch::try_new(my_schema, vec![data]).unwrap(),
-        };
 
         // Since best_split may return None, handle it properly
-        let (row_index, filter_mask, threshold) = nn.best_split().expect("No split found");
+        let (_, row_index, filter_mask, threshold) = best_split(&RecordBatch::try_new(my_schema, vec![data]).unwrap(), target).expect("No split found");
 
         // Verify the splits' contents are as expected
         assert_eq!(row_index, 0, "Wrong column index");
