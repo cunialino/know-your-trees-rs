@@ -11,12 +11,12 @@ pub enum SplitValue {
     String(String),
 }
 
-trait SplitType {
+trait Split {
     fn filter_mask(&self, split_point: &SplitValue) -> BooleanArray;
     fn possible_splits_iter(&self) -> impl Iterator<Item = (SplitValue, BooleanArray)>;
 }
 
-impl<D> SplitType for PrimitiveArray<D>
+impl<D> Split for PrimitiveArray<D>
 where
     D: ArrowPrimitiveType,
     D::Native: Into<f64>,
@@ -43,7 +43,7 @@ where
         })
     }
 }
-fn downcast_and_iter<T>(
+fn downcast_and_possible_splits<T>(
     data_ref: &ArrayRef,
 ) -> Box<dyn Iterator<Item = (SplitValue, BooleanArray)> + '_>
 where
@@ -62,9 +62,9 @@ fn best_split(data: &RecordBatch, target: ArrayRef) -> Option<(f64, usize, Boole
         .flat_map(|column_index| {
             let col = data.column(column_index);
             match col.data_type() {
-                DataType::Float32 => downcast_and_iter::<Float32Type>(col),
-                DataType::Float64 => downcast_and_iter::<Float64Type>(col),
-                DataType::Int32 => downcast_and_iter::<Int32Type>(col),
+                DataType::Float32 => downcast_and_possible_splits::<Float32Type>(col),
+                DataType::Float64 => downcast_and_possible_splits::<Float64Type>(col),
+                DataType::Int32 => downcast_and_possible_splits::<Int32Type>(col),
                 _ => panic!("Invalid data type"),
             }
             .map(|(split_value, filter_mask)| {
