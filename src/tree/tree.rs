@@ -1,4 +1,4 @@
-use super::predictions::{Prediction, PredictionValue};
+use super::predictions::Prediction;
 use super::scores::{Score, ScoreFunction};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::compute::{filter, filter_record_batch, not};
@@ -61,56 +61,53 @@ where
 fn best_split(
     data: &RecordBatch,
     target: ArrayRef,
+    split_function: &ScoreFunction,
+    prediction: Option<f64>,
 ) -> Option<(f64, usize, BooleanArray, SplitValue)> {
-    if target.score(&ScoreFunction::Gini) == 0. {
-        return None
-    }
     let iters = (0..data.num_columns()).flat_map(|column_index| {
         let col = data.column(column_index);
+        let target = target.clone(); // Clone the Arc, not the underlying data
         match col.data_type() {
             DataType::Float32 => downcast_and_possible_splits::<Float32Type>(col),
             DataType::Float64 => downcast_and_possible_splits::<Float64Type>(col),
             DataType::Int32 => downcast_and_possible_splits::<Int32Type>(col),
             _ => panic!("Invalid data type"),
         }
-        .map(|(split_value, filter_mask)| {
-            let split_score = target.split_score(&filter_mask, &ScoreFunction::Gini);
-            (split_score, filter_mask, split_value)
-        })
-        .map(move |(split_score, filter_mask, split_value)| {
-            (split_score, column_index, filter_mask, split_value)
+        .filter_map(move |(split_value, filter_mask)| {
+            target
+                .split_score(&filter_mask, split_function, prediction)
+                .map(|split_score| (split_score, column_index, filter_mask, split_value))
         })
     });
-    iters.max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+
+    iters.min_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .expect(format!("Cannot compare {} with {}.", a.0, b.0).as_str())
+    })
 }
+
 #[derive(Debug, PartialEq)]
 pub struct Tree {
     pub feature_index: Option<usize>,
     pub threshold: Option<SplitValue>,
     pub left: Option<Box<Tree>>,
     pub right: Option<Box<Tree>>,
-    pub prediction: Option<PredictionValue>, // Optional: only used at leaf nodes
+    pub prediction: Option<f64>, // Optional: only used at leaf nodes
 }
 
 impl Tree {
-    pub fn new(feature_index: usize, threshold: f64) -> Self {
-        Tree {
-            feature_index: Some(feature_index),
-            threshold: Some(SplitValue::Numeric(threshold)),
-            left: None,
-            right: None,
-            prediction: None,
-        }
-    }
     pub fn build_tree(
         samples: RecordBatch,
         target: ArrayRef,
         max_depth: usize,
+        split_function: &ScoreFunction,
     ) -> Option<Box<Tree>> {
         if max_depth == 0 || samples.num_rows() == 0 {
             return None;
         }
-        if let Some((_, col_index, data_mask, th)) = best_split(&samples, target.clone()) {
+        if let Some((_, col_index, data_mask, th)) =
+            best_split(&samples, target.clone(), split_function, None)
+        {
             let tree = Tree {
                 feature_index: Some(col_index),
                 threshold: Some(th),
@@ -118,31 +115,34 @@ impl Tree {
                     filter_record_batch(&samples, &data_mask).unwrap(),
                     filter(&target, &data_mask).unwrap(),
                     max_depth - 1,
+                    split_function,
                 ),
                 right: Self::build_tree(
                     filter_record_batch(&samples, &not(&data_mask).unwrap()).unwrap(),
                     filter(&target, &not(&data_mask).unwrap()).unwrap(),
                     max_depth - 1,
+                    split_function,
                 ),
                 prediction: None,
             };
             return Some(Box::new(tree));
-        } else {
-            target.frequency();
-
-            return Some(Box::new(Tree {
-                feature_index: None,
-                threshold: None,
-                left: None,
-                right: None,
-                prediction: Some(target.frequency()),
-            }));
         }
+        target.frequency();
+
+        return Some(Box::new(Tree {
+            feature_index: None,
+            threshold: None,
+            left: None,
+            right: None,
+            prediction: Some(target.frequency()),
+        }));
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    use crate::tree::scores::WeightedScoreFunction;
 
     use super::*;
     use arrow::{
@@ -165,6 +165,8 @@ mod tests {
         let (_, row_index, filter_mask, threshold) = best_split(
             &RecordBatch::try_new(my_schema, vec![data]).unwrap(),
             target,
+            &ScoreFunction::Weighted(WeightedScoreFunction::Gini),
+            None,
         )
         .expect("No split found");
 
@@ -188,6 +190,8 @@ mod tests {
         let (_, row_index, filter_mask, threshold) = best_split(
             &RecordBatch::try_new(my_schema, vec![data]).unwrap(),
             target,
+            &ScoreFunction::Weighted(WeightedScoreFunction::Gini),
+            None,
         )
         .expect("No split found");
 
@@ -211,6 +215,7 @@ mod tests {
             RecordBatch::try_new(my_schema, vec![data]).unwrap(),
             target,
             2,
+            &ScoreFunction::Weighted(WeightedScoreFunction::Gini),
         );
         let output_tree = Tree {
             feature_index: Some(0),
@@ -220,14 +225,14 @@ mod tests {
                 threshold: None,
                 left: None,
                 right: None,
-                prediction: Some(PredictionValue::Binary(true)),
+                prediction: Some(1.0),
             })),
             right: Some(Box::new(Tree {
                 feature_index: None,
                 threshold: None,
                 left: None,
                 right: None,
-                prediction: Some(PredictionValue::Binary(false)),
+                prediction: Some(0.0),
             })),
             prediction: None,
         };
