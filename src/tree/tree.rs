@@ -1,3 +1,4 @@
+use super::predictions::{Prediction, PredictionValue};
 use super::scores::{Score, ScoreFunction};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::compute::{filter, filter_record_batch, not};
@@ -57,33 +58,38 @@ where
     Box::new(array.possible_splits_iter())
 }
 
-fn best_split(data: &RecordBatch, target: ArrayRef) -> Option<(f64, usize, BooleanArray, SplitValue)> {
-    let iters = (0..data.num_columns())
-        .flat_map(|column_index| {
-            let col = data.column(column_index);
-            match col.data_type() {
-                DataType::Float32 => downcast_and_possible_splits::<Float32Type>(col),
-                DataType::Float64 => downcast_and_possible_splits::<Float64Type>(col),
-                DataType::Int32 => downcast_and_possible_splits::<Int32Type>(col),
-                _ => panic!("Invalid data type"),
-            }
-            .map(|(split_value, filter_mask)| {
-                let split_score = target.split_score(&filter_mask, ScoreFunction::Gini);
-                (split_score, filter_mask, split_value)
-            })
-            .map(move |(split_score, filter_mask, split_value)| {
-                (split_score, column_index, filter_mask, split_value)
-            })
-        });
-        iters.max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+fn best_split(
+    data: &RecordBatch,
+    target: ArrayRef,
+) -> Option<(f64, usize, BooleanArray, SplitValue)> {
+    if target.score(&ScoreFunction::Gini) == 0. {
+        return None
+    }
+    let iters = (0..data.num_columns()).flat_map(|column_index| {
+        let col = data.column(column_index);
+        match col.data_type() {
+            DataType::Float32 => downcast_and_possible_splits::<Float32Type>(col),
+            DataType::Float64 => downcast_and_possible_splits::<Float64Type>(col),
+            DataType::Int32 => downcast_and_possible_splits::<Int32Type>(col),
+            _ => panic!("Invalid data type"),
+        }
+        .map(|(split_value, filter_mask)| {
+            let split_score = target.split_score(&filter_mask, &ScoreFunction::Gini);
+            (split_score, filter_mask, split_value)
+        })
+        .map(move |(split_score, filter_mask, split_value)| {
+            (split_score, column_index, filter_mask, split_value)
+        })
+    });
+    iters.max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Tree {
     pub feature_index: Option<usize>,
     pub threshold: Option<SplitValue>,
     pub left: Option<Box<Tree>>,
     pub right: Option<Box<Tree>>,
-    pub prediction: Option<bool>, // Optional: only used at leaf nodes
+    pub prediction: Option<PredictionValue>, // Optional: only used at leaf nodes
 }
 
 impl Tree {
@@ -121,8 +127,17 @@ impl Tree {
                 prediction: None,
             };
             return Some(Box::new(tree));
+        } else {
+            target.frequency();
+
+            return Some(Box::new(Tree {
+                feature_index: None,
+                threshold: None,
+                left: None,
+                right: None,
+                prediction: Some(target.frequency()),
+            }));
         }
-        None
     }
 }
 
@@ -147,7 +162,11 @@ mod tests {
         let data: ArrayRef = Arc::new(Int32Array::from(vec![1, 2]));
         let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false]));
 
-        let (_, row_index, filter_mask, threshold) = best_split(&RecordBatch::try_new(my_schema, vec![data]).unwrap(), target).expect("No split found");
+        let (_, row_index, filter_mask, threshold) = best_split(
+            &RecordBatch::try_new(my_schema, vec![data]).unwrap(),
+            target,
+        )
+        .expect("No split found");
 
         // Verify the splits' contents are as expected
         assert_eq!(row_index, 0, "Wrong column index");
@@ -166,7 +185,11 @@ mod tests {
         let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false]));
 
         // Since best_split may return None, handle it properly
-        let (_, row_index, filter_mask, threshold) = best_split(&RecordBatch::try_new(my_schema, vec![data]).unwrap(), target).expect("No split found");
+        let (_, row_index, filter_mask, threshold) = best_split(
+            &RecordBatch::try_new(my_schema, vec![data]).unwrap(),
+            target,
+        )
+        .expect("No split found");
 
         // Verify the splits' contents are as expected
         assert_eq!(row_index, 0, "Wrong column index");
@@ -182,13 +205,36 @@ mod tests {
             false,
         )]));
 
-        let data: ArrayRef = Arc::new(Float32Array::from(vec![1.0, 2.0]));
-        let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false]));
+        let data: ArrayRef = Arc::new(Float32Array::from(vec![1.0, 2.0, 3.0]));
+        let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false, false]));
         let tree = Tree::build_tree(
             RecordBatch::try_new(my_schema, vec![data]).unwrap(),
             target,
             2,
         );
-        dbg!(tree);
+        let output_tree = Tree {
+            feature_index: Some(0),
+            threshold: Some(SplitValue::Numeric(2.0)),
+            left: Some(Box::new(Tree {
+                feature_index: None,
+                threshold: None,
+                left: None,
+                right: None,
+                prediction: Some(PredictionValue::Binary(true)),
+            })),
+            right: Some(Box::new(Tree {
+                feature_index: None,
+                threshold: None,
+                left: None,
+                right: None,
+                prediction: Some(PredictionValue::Binary(false)),
+            })),
+            prediction: None,
+        };
+        assert_eq!(
+            tree,
+            Some(Box::new(output_tree)),
+            "Tree did not fit correctly"
+        );
     }
 }
