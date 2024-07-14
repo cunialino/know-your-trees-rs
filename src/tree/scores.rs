@@ -37,7 +37,7 @@ impl Score for ArrayRef {
         }
     }
     fn split_score(&self, filter_mask: &BooleanArray, score_function: &ScoreFunction) -> f64 {
-        let left_len = filter_mask.values().iter().filter(|&value| value).count();
+        let left_len = filter_mask.true_count();
         let total_len = filter_mask.len();
         let right_len = total_len - left_len;
 
