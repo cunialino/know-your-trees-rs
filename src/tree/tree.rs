@@ -1,7 +1,7 @@
-use super::predictions::Prediction;
-use super::scores::{generate_score_function, ScoreConfig, ScoreFn};
+use super::predictions::{generate_prediction_function, PredictionFn};
+use super::scores::{generate_score_function, ScoreConfig, SplitScoreFn};
 use super::split::{best_split, SplitValue};
-use arrow::array::ArrayRef;
+use arrow::array::Array;
 use arrow::compute::{filter, filter_record_batch, not};
 use arrow::record_batch::RecordBatch;
 use std::usize;
@@ -23,39 +23,43 @@ pub struct Tree {
 impl Tree {
     pub fn fit(
         samples: RecordBatch,
-        target: ArrayRef,
+        target: &dyn Array,
         tree_config: &TreeConfig,
         score_config: &ScoreConfig,
     ) -> Option<Box<Tree>> {
         let max_depth = tree_config.max_depth.clone();
         let split_function = generate_score_function(score_config);
-        Tree::build_tree_recursive(samples, target, max_depth, &split_function)
+        let prediction_function = generate_prediction_function();
+        Tree::build_tree_recursive(samples, target, max_depth, &split_function, &prediction_function)
     }
     fn build_tree_recursive(
         samples: RecordBatch,
-        target: ArrayRef,
+        target: &dyn Array,
         max_depth: usize,
-        split_function: &ScoreFn,
+        split_function: &SplitScoreFn,
+        prediction_function: &PredictionFn,
     ) -> Option<Box<Tree>> {
         if max_depth == 0 || samples.num_rows() == 0 {
             return None;
         }
-        if let Some((_, col_index, data_mask, th)) = best_split(&samples, &target, &split_function)
+        if let Some((_, col_index, data_mask, th)) = best_split(&samples, target, split_function)
         {
             let tree = Tree {
                 feature_index: Some(col_index),
                 threshold: Some(th),
                 left: Self::build_tree_recursive(
                     filter_record_batch(&samples, &data_mask).unwrap(),
-                    filter(&target, &data_mask).unwrap(),
+                    filter(target, &data_mask).unwrap().as_ref(),
                     max_depth - 1,
                     split_function,
+                    prediction_function,
                 ),
                 right: Self::build_tree_recursive(
                     filter_record_batch(&samples, &not(&data_mask).unwrap()).unwrap(),
-                    filter(&target, &not(&data_mask).unwrap()).unwrap(),
+                    filter(target, &not(&data_mask).unwrap()).unwrap().as_ref(),
                     max_depth - 1,
                     split_function,
+                    prediction_function,
                 ),
                 prediction: None,
             };
@@ -67,7 +71,7 @@ impl Tree {
             threshold: None,
             left: None,
             right: None,
-            prediction: Some(target.frequency()),
+            prediction: Some(prediction_function(target)),
         }));
     }
 }
@@ -75,10 +79,11 @@ impl Tree {
 #[cfg(test)]
 mod tests {
 
-    use crate::tree::scores::ScoreFunction;
-    use crate::tree::scores::WeightedScoreFunction;
+    use crate::tree::scores::SplitScores;
+    use crate::tree::scores::WeightedSplitScores;
 
     use super::*;
+    use arrow::array::ArrayRef;
     use arrow::{
         array::{BooleanArray, Float32Array},
         datatypes::{DataType, Field, Schema},
@@ -97,12 +102,12 @@ mod tests {
         let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false, false]));
         let tree_config = TreeConfig { max_depth: 2 };
         let score_config = ScoreConfig {
-            score_function: ScoreFunction::Weighted(WeightedScoreFunction::Gini),
+            score_function: SplitScores::Weighted(WeightedSplitScores::Gini),
             initial_prediction: None,
         };
         let tree = Tree::fit(
             RecordBatch::try_new(my_schema, vec![data]).unwrap(),
-            target,
+            &target,
             &tree_config,
             &score_config,
         );

@@ -1,10 +1,10 @@
-use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::array::{Array, BooleanArray, PrimitiveArray};
 use arrow::datatypes::{ArrowPrimitiveType, DataType, Float32Type, Float64Type, Int32Type};
 use arrow::record_batch::RecordBatch;
 
 use std::usize;
 
-use super::scores::ScoreFn;
+use super::scores::SplitScoreFn;
 
 #[derive(Debug, PartialEq)]
 pub enum SplitValue {
@@ -45,7 +45,7 @@ where
     }
 }
 fn downcast_and_possible_splits<T>(
-    data_ref: &ArrayRef,
+    data_ref: &dyn Array,
 ) -> Box<dyn Iterator<Item = (SplitValue, BooleanArray)> + '_>
 where
     T: ArrowPrimitiveType,
@@ -59,8 +59,8 @@ where
 }
 pub fn best_split(
     data: &RecordBatch,
-    target: &ArrayRef,
-    split_function: &ScoreFn,
+    target: &dyn Array,
+    split_function: &SplitScoreFn,
 ) -> Option<(f64, usize, BooleanArray, SplitValue)> {
     let iters = (0..data.num_columns()).flat_map(move |column_index| {
         let col = data.column(column_index);
@@ -91,12 +91,12 @@ mod tests {
 
     use crate::tree::scores::generate_score_function;
     use crate::tree::scores::ScoreConfig;
-    use crate::tree::scores::ScoreFunction;
-    use crate::tree::scores::WeightedScoreFunction;
+    use crate::tree::scores::SplitScores;
+    use crate::tree::scores::WeightedSplitScores;
 
     use super::*;
     use arrow::{
-        array::{Float32Array, Int32Array},
+        array::{Float32Array, Int32Array, ArrayRef},
         datatypes::{DataType, Field, Schema},
     };
     use std::sync::Arc;
@@ -113,7 +113,7 @@ mod tests {
         let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false]));
 
         let score_config = ScoreConfig {
-            score_function: ScoreFunction::Weighted(WeightedScoreFunction::Gini),
+            score_function: SplitScores::Weighted(WeightedSplitScores::Gini),
             initial_prediction: None,
         };
         let score_fn = generate_score_function(&score_config);
@@ -142,7 +142,7 @@ mod tests {
 
         // Since best_split may return None, handle it properly
         let score_config = ScoreConfig {
-            score_function: ScoreFunction::Weighted(WeightedScoreFunction::Gini),
+            score_function: SplitScores::Weighted(WeightedSplitScores::Gini),
             initial_prediction: None,
         };
         let score_fn = generate_score_function(&score_config);
