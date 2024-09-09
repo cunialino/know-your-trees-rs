@@ -13,7 +13,7 @@ pub struct TreeConfig {
 
 #[derive(Debug, PartialEq)]
 pub struct Tree {
-    pub feature_index: Option<usize>,
+    pub feature_index: Option<String>,
     pub threshold: Option<SplitValue>,
     pub left: Option<Box<Tree>>,
     pub right: Option<Box<Tree>>,
@@ -116,7 +116,7 @@ mod tests {
             &score_config,
         );
         let output_tree = Tree {
-            feature_index: Some(0),
+            feature_index: Some("sample".to_string()),
             threshold: Some(SplitValue::Numeric(2.0)),
             left: Some(Box::new(Tree {
                 feature_index: None,

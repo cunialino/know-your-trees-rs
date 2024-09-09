@@ -2,8 +2,6 @@ use arrow::array::{Array, BooleanArray, PrimitiveArray};
 use arrow::datatypes::{ArrowPrimitiveType, DataType, Float32Type, Float64Type, Int32Type};
 use arrow::record_batch::RecordBatch;
 
-use std::usize;
-
 use super::scores::SplitScoreFn;
 
 #[derive(Debug, PartialEq)]
@@ -61,29 +59,32 @@ pub fn best_split(
     data: &RecordBatch,
     target: &dyn Array,
     split_function: &SplitScoreFn,
-) -> Option<(f64, usize, BooleanArray, SplitValue)> {
-    let iters = (0..data.num_columns()).flat_map(move |column_index| {
-        let col = data.column(column_index);
-        match col.data_type() {
-            DataType::Float32 => downcast_and_possible_splits::<Float32Type>(col),
-            DataType::Float64 => downcast_and_possible_splits::<Float64Type>(col),
-            DataType::Int32 => downcast_and_possible_splits::<Int32Type>(col),
-            _ => panic!("Invalid data type"),
-        }
-        .filter_map(move |(split_value, filter_mask)| {
+) -> Option<(f64, String, BooleanArray, SplitValue)> {
+    data.schema()
+        .fields()
+        .iter()
+        .flat_map(|field| {
+            let col = data.column_by_name(field.name()).unwrap();
+            match field.data_type() {
+                DataType::Float32 => downcast_and_possible_splits::<Float32Type>(col),
+                DataType::Float64 => downcast_and_possible_splits::<Float64Type>(col),
+                DataType::Int32 => downcast_and_possible_splits::<Int32Type>(col),
+                _ => panic!("Invalid data type"),
+            }
+            .map(|(split_value, filter_mask)| (field.name(), split_value, filter_mask))
+        })
+        .filter_map(|(name, split_value, filter_mask)| {
             let score = split_function(target, &filter_mask);
             if score.is_some() {
-                Some((score.unwrap(), column_index, filter_mask, split_value))
+                Some((score.unwrap(), name.to_string(), filter_mask, split_value))
             } else {
                 None
             }
         })
-    });
-
-    iters.min_by(|a, b| {
-        a.0.partial_cmp(&b.0)
-            .expect(format!("Cannot compare {} with {}.", a.0, b.0).as_str())
-    })
+        .min_by(|a, b| {
+            a.0.partial_cmp(&b.0)
+                .expect(format!("Cannot compare {} with {}.", a.0, b.0).as_str())
+        })
 }
 
 #[cfg(test)]
@@ -96,7 +97,7 @@ mod tests {
 
     use super::*;
     use arrow::{
-        array::{Float32Array, Int32Array, ArrayRef},
+        array::{ArrayRef, Float32Array, Int32Array},
         datatypes::{DataType, Field, Schema},
     };
     use std::sync::Arc;
@@ -125,7 +126,7 @@ mod tests {
         .expect("No split found");
 
         // Verify the splits' contents are as expected
-        assert_eq!(row_index, 0, "Wrong column index");
+        assert_eq!(row_index, "sample", "Wrong column index");
         assert_eq!(filter_mask, BooleanArray::from(vec![true, false]));
         assert_eq!(threshold, SplitValue::Numeric(2.), "Wrong threshold");
     }
@@ -154,7 +155,7 @@ mod tests {
         .expect("No split found");
 
         // Verify the splits' contents are as expected
-        assert_eq!(row_index, 0, "Wrong column index");
+        assert_eq!(row_index, "sample", "Wrong column index");
         assert_eq!(filter_mask, BooleanArray::from(vec![true, false]));
         assert_eq!(threshold, SplitValue::Numeric(2.), "Wrong threshold");
     }
