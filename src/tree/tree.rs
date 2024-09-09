@@ -30,7 +30,13 @@ impl Tree {
         let max_depth = tree_config.max_depth.clone();
         let split_function = generate_score_function(score_config);
         let prediction_function = generate_prediction_function();
-        Tree::build_tree_recursive(samples, target, max_depth, &split_function, &prediction_function)
+        Tree::build_tree_recursive(
+            samples,
+            target,
+            max_depth,
+            &split_function,
+            &prediction_function,
+        )
     }
     fn build_tree_recursive(
         samples: RecordBatch,
@@ -42,9 +48,8 @@ impl Tree {
         if max_depth == 0 || samples.num_rows() == 0 {
             return None;
         }
-        if let Some((_, col_index, data_mask, th)) = best_split(&samples, target, split_function)
-        {
-            let tree = Tree {
+        if let Some((_, col_index, data_mask, th)) = best_split(&samples, target, split_function) {
+            Some(Box::new(Tree {
                 feature_index: Some(col_index),
                 threshold: Some(th),
                 left: Self::build_tree_recursive(
@@ -62,17 +67,16 @@ impl Tree {
                     prediction_function,
                 ),
                 prediction: None,
-            };
-            return Some(Box::new(tree));
+            }))
+        } else {
+            Some(Box::new(Tree {
+                feature_index: None,
+                threshold: None,
+                left: None,
+                right: None,
+                prediction: Some(prediction_function(target)),
+            }))
         }
-
-        return Some(Box::new(Tree {
-            feature_index: None,
-            threshold: None,
-            left: None,
-            right: None,
-            prediction: Some(prediction_function(target)),
-        }));
     }
 }
 
