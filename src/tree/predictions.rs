@@ -1,6 +1,6 @@
 use arrow::array::{Array, BooleanArray};
 
-pub type PredictionFn = dyn Fn(&dyn Array) -> f64;
+use super::scores::{generate_loss_function, LossFn, ScoreConfig};
 
 fn frequency(arr: &dyn Array) -> f64 {
     let boolean_array = arr
@@ -10,6 +10,11 @@ fn frequency(arr: &dyn Array) -> f64 {
     boolean_array.true_count() as f64 / boolean_array.len() as f64
 }
 
-pub fn generate_prediction_function() -> Box<PredictionFn> {
-    Box::new(|arr: &dyn Array| frequency(arr))
+pub fn generate_prediction_function(score_config: &ScoreConfig) -> Box<LossFn> {
+    let (score_fn, is_wgt) = generate_loss_function(score_config);
+    if is_wgt {
+        Box::new(|arr| frequency(arr))
+    } else {
+        Box::new(move |arr| score_fn(arr))
+    }
 }

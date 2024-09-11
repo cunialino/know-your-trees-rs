@@ -1,5 +1,5 @@
-use super::predictions::{generate_prediction_function, PredictionFn};
-use super::scores::{generate_score_function, ScoreConfig, SplitScoreFn};
+use super::predictions::generate_prediction_function;
+use super::scores::{generate_score_function, LossFn, ScoreConfig, SplitScoreFn};
 use super::split::{best_split, SplitValue};
 use arrow::array::Array;
 use arrow::compute::{filter, filter_record_batch, not};
@@ -29,7 +29,7 @@ impl Tree {
     ) -> Option<Box<Tree>> {
         let max_depth = tree_config.max_depth.clone();
         let split_function = generate_score_function(score_config);
-        let prediction_function = generate_prediction_function();
+        let prediction_function = generate_prediction_function(score_config);
         Tree::build_tree_recursive(
             samples,
             target,
@@ -43,7 +43,7 @@ impl Tree {
         target: &dyn Array,
         max_depth: usize,
         split_function: &SplitScoreFn,
-        prediction_function: &PredictionFn,
+        prediction_function: &LossFn,
     ) -> Option<Box<Tree>> {
         if max_depth == 0 || samples.num_rows() == 0 {
             return None;

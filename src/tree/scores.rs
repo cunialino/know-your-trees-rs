@@ -3,6 +3,7 @@ use arrow::compute::{filter, not};
 use std::collections::HashMap;
 
 pub type SplitScoreFn = dyn Fn(&dyn Array, &BooleanArray) -> Option<f64>;
+pub type LossFn = dyn Fn(&dyn Array) -> f64;
 
 #[derive(Debug, Clone, Copy)]
 pub enum WeightedSplitScores {
@@ -63,35 +64,37 @@ fn gini(target: &dyn Array) -> f64 {
     });
     1.0 - sum_of_squares
 }
+pub fn generate_loss_function(score_config: &ScoreConfig) -> (Box<LossFn>, bool) {
+    match score_config.score_function {
+        SplitScores::Weighted(weighted_fn) => {
+            if score_config.initial_prediction.is_some() {
+                panic!("Prediction should not be provided for weighted score functions");
+            }
+            (
+                match weighted_fn {
+                    WeightedSplitScores::Gini => Box::new(|arr| gini(arr)),
+                },
+                true,
+            )
+        }
+        SplitScores::Differentiable(diff_fn) => {
+            let pred = score_config
+                .initial_prediction
+                .expect("Prediction must be provided for differentiable score functions");
+            (
+                match diff_fn {
+                    DifferentiableSplitScores::Logit => {
+                        let pred = pred.clone();
+                        Box::new(move |arr| logit(arr, pred))
+                    }
+                },
+                false,
+            )
+        }
+    }
+}
 pub fn generate_score_function(score_config: &ScoreConfig) -> Box<SplitScoreFn> {
-    let (score_fn, is_wgt): (Box<dyn Fn(&dyn Array) -> f64>, bool) =
-        match score_config.score_function {
-            SplitScores::Weighted(weighted_fn) => {
-                if score_config.initial_prediction.is_some() {
-                    panic!("Prediction should not be provided for weighted score functions");
-                }
-                (
-                    match weighted_fn {
-                        WeightedSplitScores::Gini => Box::new(|arr| gini(arr)),
-                    },
-                    true,
-                )
-            }
-            SplitScores::Differentiable(diff_fn) => {
-                let pred = score_config
-                    .initial_prediction
-                    .expect("Prediction must be provided for differentiable score functions");
-                (
-                    match diff_fn {
-                        DifferentiableSplitScores::Logit => {
-                            let pred = pred.clone();
-                            Box::new(move |arr| logit(arr, pred))
-                        }
-                    },
-                    false,
-                )
-            }
-        };
+    let (score_fn, is_wgt) = generate_loss_function(score_config);
     {
         let is_wgt = is_wgt.clone();
         Box::new(move |arr: &dyn Array, filter_mask: &BooleanArray| {
