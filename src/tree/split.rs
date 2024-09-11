@@ -34,7 +34,7 @@ where
         }
     }
     fn possible_splits_iter(&self) -> impl Iterator<Item = (SplitValue, BooleanArray)> {
-        self.values().iter().map(move |&split_point| {
+        self.values().iter().map(|&split_point| {
             (
                 SplitValue::Numeric(split_point.into()),
                 self.filter_mask(&SplitValue::Numeric(split_point.into())),

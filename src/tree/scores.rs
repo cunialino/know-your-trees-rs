@@ -64,50 +64,56 @@ fn gini(target: &dyn Array) -> f64 {
     1.0 - sum_of_squares
 }
 pub fn generate_score_function(score_config: &ScoreConfig) -> Box<SplitScoreFn> {
-    let (score_fn, is_wgt): (Box<dyn Fn(&dyn Array) -> f64>, bool) = match score_config.score_function
-    {
-        SplitScores::Weighted(weighted_fn) => {
-            if score_config.initial_prediction.is_some() {
-                panic!("Prediction should not be provided for weighted score functions");
-            }
-            (
-                match weighted_fn {
-                    WeightedSplitScores::Gini => Box::new(|arr| gini(arr)),
-                },
-                true,
-            )
-        }
-        SplitScores::Differentiable(diff_fn) => {
-            let pred = score_config
-                .initial_prediction
-                .expect("Prediction must be provided for differentiable score functions");
-            (
-                match diff_fn {
-                    DifferentiableSplitScores::Logit => Box::new(move |arr| logit(arr, pred)),
-                },
-                false,
-            )
-        }
-    };
-    Box::new(move |arr: &dyn Array, filter_mask: &BooleanArray| {
-        let left_array = filter(arr, filter_mask).unwrap();
-        let right_array = filter(arr, &not(filter_mask).unwrap()).unwrap();
-        let (left_wgt, right_wgt) = match is_wgt {
-            true => (1.0, 1.0),
-            false => {
-                let left_len = filter_mask.true_count();
-                let total_len = filter_mask.len();
-                let right_len = total_len - left_len;
+    let (score_fn, is_wgt): (Box<dyn Fn(&dyn Array) -> f64>, bool) =
+        match score_config.score_function {
+            SplitScores::Weighted(weighted_fn) => {
+                if score_config.initial_prediction.is_some() {
+                    panic!("Prediction should not be provided for weighted score functions");
+                }
                 (
-                    left_len as f64 / total_len as f64,
-                    right_len as f64 / total_len as f64,
+                    match weighted_fn {
+                        WeightedSplitScores::Gini => Box::new(|arr| gini(arr)),
+                    },
+                    true,
+                )
+            }
+            SplitScores::Differentiable(diff_fn) => {
+                let pred = score_config
+                    .initial_prediction
+                    .expect("Prediction must be provided for differentiable score functions");
+                (
+                    match diff_fn {
+                        DifferentiableSplitScores::Logit => {
+                            let pred = pred.clone();
+                            Box::new(move |arr| logit(arr, pred))
+                        }
+                    },
+                    false,
                 )
             }
         };
-        if is_wgt && score_fn(arr) == 0. {
-            None
-        } else {
-            Some(left_wgt * score_fn(&left_array) + right_wgt * score_fn(&right_array))
-        }
-    })
+    {
+        let is_wgt = is_wgt.clone();
+        Box::new(move |arr: &dyn Array, filter_mask: &BooleanArray| {
+            let left_array = filter(arr, filter_mask).unwrap();
+            let right_array = filter(arr, &not(filter_mask).unwrap()).unwrap();
+            let (left_wgt, right_wgt) = match is_wgt {
+                true => (1.0, 1.0),
+                false => {
+                    let left_len = filter_mask.true_count();
+                    let total_len = filter_mask.len();
+                    let right_len = total_len - left_len;
+                    (
+                        left_len as f64 / total_len as f64,
+                        right_len as f64 / total_len as f64,
+                    )
+                }
+            };
+            if is_wgt && score_fn(arr) == 0. {
+                None
+            } else {
+                Some(left_wgt * score_fn(&left_array) + right_wgt * score_fn(&right_array))
+            }
+        })
+    }
 }
