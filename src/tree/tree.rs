@@ -1,7 +1,8 @@
+use super::array_traits::ArrayConversions;
 use super::predictions::generate_prediction_function;
 use super::scores::{generate_score_function, LossFn, ScoreConfig, SplitScoreFn};
 use super::split::{best_split, SplitValue};
-use arrow::array::Array;
+use arrow::array::{Array, Float64Array};
 use arrow::compute::{filter, filter_record_batch, not};
 use arrow::record_batch::RecordBatch;
 use std::usize;
@@ -78,6 +79,50 @@ impl Tree {
             }))
         }
     }
+    fn predict_single_value(&self, samples: &RecordBatch) -> f64 {
+        assert!(
+            samples.num_rows() == 1,
+            "Expected one record only in predict_single_value"
+        );
+        if let (Some(feat_name), Some(l), Some(r), Some(split_value)) = (
+            self.feature_index.as_ref(),
+            self.left.as_ref(),
+            self.right.as_ref(),
+            self.threshold.as_ref(),
+        ) {
+            let col = samples
+                .column_by_name(feat_name)
+                .expect(format!("Column {feat_name} not present for prediction").as_str());
+            match split_value {
+                SplitValue::String(_) => todo!("Prediction on strins not implemented yet"),
+                SplitValue::Numeric(sv) => {
+                    let val = col
+                        .try_into_iter_f64()
+                        .expect(format!("Cannot convert column {feat_name} to f64").as_str())
+                        .nth(0)
+                        .unwrap();
+                    println!("Feature value {val}\nSplit value {sv}");
+                    if val < *sv {
+                        l.predict_single_value(&samples)
+                    } else {
+                        r.predict_single_value(&samples)
+                    }
+                }
+            }
+        } else {
+            self.prediction
+                .expect("Something went wrong in building the tree")
+        }
+    }
+    pub fn predict(&self, samples: &RecordBatch) -> Float64Array {
+        (0..samples.num_rows())
+            .into_iter()
+            .map(|row_num| {
+                let row = samples.slice(row_num, 1);
+                self.predict_single_value(&row)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -139,5 +184,37 @@ mod tests {
             Some(Box::new(output_tree)),
             "Tree did not fit correctly"
         );
+    }
+    #[test]
+    fn test_prediction() {
+        let tree = Tree {
+            feature_index: Some("sample".to_string()),
+            threshold: Some(SplitValue::Numeric(2.0)),
+            left: Some(Box::new(Tree {
+                feature_index: None,
+                threshold: None,
+                left: None,
+                right: None,
+                prediction: Some(1.0),
+            })),
+            right: Some(Box::new(Tree {
+                feature_index: None,
+                threshold: None,
+                left: None,
+                right: None,
+                prediction: Some(0.0),
+            })),
+            prediction: None,
+        };
+        let my_schema: Arc<Schema> = Arc::new(Schema::new(vec![Field::new(
+            "sample",
+            DataType::Float32,
+            false,
+        )]));
+
+        let data: ArrayRef = Arc::new(Float32Array::from(vec![1.0, 2.0, 3.0]));
+        let samples = RecordBatch::try_new(my_schema, vec![data]).unwrap();
+        let out = tree.predict(&samples);
+        assert_eq!(out, Float64Array::from(vec![1., 0., 0.]));
     }
 }
