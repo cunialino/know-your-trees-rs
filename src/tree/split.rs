@@ -1,59 +1,40 @@
-use arrow::array::{Array, BooleanArray, PrimitiveArray};
-use arrow::datatypes::{ArrowPrimitiveType, DataType, Float32Type, Float64Type, Int32Type};
+use core::f64;
+
+use arrow::array::{Array, BooleanArray};
 use arrow::record_batch::RecordBatch;
 
+use super::array_traits::ArrayConversions;
 use super::scores::SplitScoreFn;
 
 #[derive(Debug, PartialEq)]
 pub enum SplitValue {
     Numeric(f64),
-    String(String),
+    String(Vec<String>),
 }
 
-trait Split {
-    fn filter_mask(&self, split_point: &SplitValue) -> BooleanArray;
-    fn possible_splits_iter(&self) -> impl Iterator<Item = (SplitValue, BooleanArray)>;
-}
-
-impl<D> Split for PrimitiveArray<D>
-where
-    D: ArrowPrimitiveType,
-    D::Native: Into<f64>,
-{
-    fn filter_mask(&self, split_point: &SplitValue) -> BooleanArray {
-        if let SplitValue::Numeric(numeric_point) = split_point {
-            let split_point = *numeric_point;
-            BooleanArray::from(
-                self.values()
-                    .iter()
-                    .map(|&value| value.into() < split_point)
-                    .collect::<Vec<bool>>(),
-            )
-        } else {
-            panic!("Mismatched split point type for numeric array")
-        }
-    }
-    fn possible_splits_iter(&self) -> impl Iterator<Item = (SplitValue, BooleanArray)> {
-        self.values().iter().map(|&split_point| {
-            (
-                SplitValue::Numeric(split_point.into()),
-                self.filter_mask(&SplitValue::Numeric(split_point.into())),
-            )
-        })
+fn filter_mask(feature: &dyn Array, split_value: &SplitValue) -> BooleanArray {
+    match split_value {
+        SplitValue::Numeric(split_point) => BooleanArray::from(
+            feature
+                .try_into_iter_f64()
+                .unwrap()
+                .map(|v| v < *split_point)
+                .collect::<std::vec::Vec<_>>(),
+        ),
+        SplitValue::String(_) => todo!("Categorical features not yet implemented"),
     }
 }
-fn downcast_and_possible_splits<T>(
-    data_ref: &dyn Array,
-) -> Box<dyn Iterator<Item = (SplitValue, BooleanArray)> + '_>
-where
-    T: ArrowPrimitiveType,
-    T::Native: Into<f64>,
-{
-    let array = data_ref
-        .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap();
-    Box::new(array.possible_splits_iter())
+fn possible_splits_iter(
+    feature: &dyn Array,
+) -> Box<dyn Iterator<Item = (SplitValue, BooleanArray)> + '_> {
+    match feature.data_type().is_numeric() {
+        true => Box::new(feature.try_into_iter_f64().unwrap().map(|split_point| {
+            let split_pt = SplitValue::Numeric(split_point);
+            let bl_mask = filter_mask(feature, &split_pt);
+            (split_pt, bl_mask)
+        })),
+        false => todo!("Categorical features not yet implemented"),
+    }
 }
 pub fn best_split(
     data: &RecordBatch,
@@ -65,12 +46,7 @@ pub fn best_split(
         .iter()
         .flat_map(|field| {
             let col = data.column_by_name(field.name()).unwrap();
-            match field.data_type() {
-                DataType::Float32 => downcast_and_possible_splits::<Float32Type>(col),
-                DataType::Float64 => downcast_and_possible_splits::<Float64Type>(col),
-                DataType::Int32 => downcast_and_possible_splits::<Int32Type>(col),
-                _ => panic!("Invalid data type"),
-            }
+            possible_splits_iter(col)
             .map(|(split_value, filter_mask)| (field.name(), split_value, filter_mask))
         })
         .filter_map(|(name, split_value, filter_mask)| {
