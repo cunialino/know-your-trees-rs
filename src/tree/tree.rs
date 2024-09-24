@@ -1,6 +1,5 @@
 use super::array_traits::ArrayConversions;
-use super::predictions::generate_prediction_function;
-use super::scores::{generate_score_function, LossFn, ScoreConfig, SplitScoreFn};
+use super::scores::{generate_score_function, ScoreConfig, SplitFnType, PredFnType};
 use super::split::{best_split, SplitValue};
 use arrow::array::{Array, Float64Array};
 use arrow::compute::{filter, filter_record_batch, not};
@@ -29,8 +28,7 @@ impl Tree {
         score_config: &ScoreConfig,
     ) -> Option<Box<Tree>> {
         let max_depth = tree_config.max_depth.clone();
-        let split_function = generate_score_function(score_config);
-        let prediction_function = generate_prediction_function(score_config);
+        let (split_function, prediction_function) = generate_score_function(score_config);
         Tree::build_tree_recursive(
             samples,
             target,
@@ -43,8 +41,8 @@ impl Tree {
         samples: RecordBatch,
         target: &dyn Array,
         max_depth: usize,
-        split_function: &SplitScoreFn,
-        prediction_function: &LossFn,
+        split_function: &SplitFnType,
+        prediction_function: &PredFnType,
     ) -> Option<Box<Tree>> {
         if max_depth == 0 || samples.num_rows() == 0 {
             return None;
@@ -98,11 +96,9 @@ impl Tree {
                 SplitValue::Numeric(sv) => {
                     let val = col
                         .try_into_iter_f64()
-                        .expect(format!("Cannot convert column {feat_name} to f64").as_str())
                         .nth(0)
                         .unwrap();
-                    println!("Feature value {val}\nSplit value {sv}");
-                    if val < *sv {
+                    if val.unwrap() < *sv {
                         l.predict_single_value(&samples)
                     } else {
                         r.predict_single_value(&samples)
@@ -144,10 +140,10 @@ mod tests {
         let my_schema: Arc<Schema> = Arc::new(Schema::new(vec![Field::new(
             "sample",
             DataType::Float32,
-            false,
+            true,
         )]));
 
-        let data: ArrayRef = Arc::new(Float32Array::from(vec![1.0, 2.0, 3.0]));
+        let data: ArrayRef = Arc::new(Float32Array::from(vec![Some(1.), Some(2.), None]));
         let target: ArrayRef = Arc::new(BooleanArray::from(vec![true, false, false]));
         let tree_config = TreeConfig { max_depth: 2 };
         let score_config = ScoreConfig {
