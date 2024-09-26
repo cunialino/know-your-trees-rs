@@ -87,11 +87,12 @@ impl Tree {
             samples.num_rows() == 1,
             "Expected one record only in predict_single_value"
         );
-        if let (Some(feat_name), Some(l), Some(r), Some(split_value)) = (
+        if let (Some(feat_name), Some(l), Some(r), Some(split_value), Some(null_direction)) = (
             self.feature_index.as_ref(),
             self.left.as_ref(),
             self.right.as_ref(),
             self.threshold.as_ref(),
+            self.null_direction.as_ref(),
         ) {
             let col = samples
                 .column_by_name(feat_name)
@@ -100,11 +101,19 @@ impl Tree {
                 SplitValue::String(_) => todo!("Prediction on strins not implemented yet"),
                 SplitValue::Numeric(sv) => {
                     let val = col.try_into_iter_f64().nth(0).unwrap();
-                    if val.unwrap() < *sv {
-                        l.predict_single_value(&samples)
-                    } else {
-                        r.predict_single_value(&samples)
-                    }
+                    val.map_or_else(
+                        || match null_direction {
+                            NullDirection::Left => l.predict_single_value(&samples),
+                            NullDirection::Right => r.predict_single_value(&samples),
+                        },
+                        |v| {
+                            if v < *sv {
+                                l.predict_single_value(&samples)
+                            } else {
+                                r.predict_single_value(&samples)
+                            }
+                        },
+                    )
                 }
             }
         } else {
@@ -213,12 +222,12 @@ mod tests {
         let my_schema: Arc<Schema> = Arc::new(Schema::new(vec![Field::new(
             "sample",
             DataType::Float32,
-            false,
+            true,
         )]));
 
-        let data: ArrayRef = Arc::new(Float32Array::from(vec![1.0, 2.0, 3.0]));
+        let data: ArrayRef = Arc::new(Float32Array::from(vec![Some(1.0), Some(2.0), Some(3.0), None]));
         let samples = RecordBatch::try_new(my_schema, vec![data]).unwrap();
         let out = tree.predict(&samples);
-        assert_eq!(out, Float64Array::from(vec![1., 0., 0.]));
+        assert_eq!(out, Float64Array::from(vec![1., 0., 0., 1.]));
     }
 }
