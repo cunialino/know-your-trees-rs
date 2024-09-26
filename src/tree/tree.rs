@@ -225,7 +225,12 @@ mod tests {
             true,
         )]));
 
-        let data: ArrayRef = Arc::new(Float32Array::from(vec![Some(1.0), Some(2.0), Some(3.0), None]));
+        let data: ArrayRef = Arc::new(Float32Array::from(vec![
+            Some(1.0),
+            Some(2.0),
+            Some(3.0),
+            None,
+        ]));
         let samples = RecordBatch::try_new(my_schema, vec![data]).unwrap();
         let out = tree.predict(&samples);
         assert_eq!(out, Float64Array::from(vec![1., 0., 0., 1.]));
