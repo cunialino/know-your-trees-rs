@@ -1,5 +1,5 @@
 use super::array_traits::ArrayConversions;
-use super::scores::{generate_score_function, ScoreConfig, SplitFnType, PredFnType};
+use super::scores::{generate_score_function, NullDirection, PredFnType, ScoreConfig, SplitFnType};
 use super::split::{best_split, SplitValue};
 use arrow::array::{Array, Float64Array};
 use arrow::compute::{filter, filter_record_batch, not};
@@ -17,6 +17,7 @@ pub struct Tree {
     pub threshold: Option<SplitValue>,
     pub left: Option<Box<Tree>>,
     pub right: Option<Box<Tree>>,
+    pub null_direction: Option<NullDirection>,
     pub prediction: Option<f64>, // Optional: only used at leaf nodes
 }
 
@@ -47,10 +48,13 @@ impl Tree {
         if max_depth == 0 || samples.num_rows() == 0 {
             return None;
         }
-        if let Some((_, col_index, data_mask, th)) = best_split(&samples, target, split_function) {
+        if let Some((split_score, col_index, data_mask, th)) =
+            best_split(&samples, target, split_function)
+        {
             Some(Box::new(Tree {
                 feature_index: Some(col_index),
                 threshold: Some(th),
+                null_direction: Some(split_score.null_direction),
                 left: Self::build_tree_recursive(
                     filter_record_batch(&samples, &data_mask).unwrap(),
                     filter(target, &data_mask).unwrap().as_ref(),
@@ -73,6 +77,7 @@ impl Tree {
                 threshold: None,
                 left: None,
                 right: None,
+                null_direction: None,
                 prediction: Some(prediction_function(target)),
             }))
         }
@@ -94,10 +99,7 @@ impl Tree {
             match split_value {
                 SplitValue::String(_) => todo!("Prediction on strins not implemented yet"),
                 SplitValue::Numeric(sv) => {
-                    let val = col
-                        .try_into_iter_f64()
-                        .nth(0)
-                        .unwrap();
+                    let val = col.try_into_iter_f64().nth(0).unwrap();
                     if val.unwrap() < *sv {
                         l.predict_single_value(&samples)
                     } else {
@@ -159,18 +161,21 @@ mod tests {
         let output_tree = Tree {
             feature_index: Some("sample".to_string()),
             threshold: Some(SplitValue::Numeric(2.0)),
+            null_direction: Some(NullDirection::Left),
             left: Some(Box::new(Tree {
                 feature_index: None,
                 threshold: None,
                 left: None,
                 right: None,
                 prediction: Some(1.0),
+                null_direction: None,
             })),
             right: Some(Box::new(Tree {
                 feature_index: None,
                 threshold: None,
                 left: None,
                 right: None,
+                null_direction: None,
                 prediction: Some(0.0),
             })),
             prediction: None,
@@ -186,12 +191,14 @@ mod tests {
         let tree = Tree {
             feature_index: Some("sample".to_string()),
             threshold: Some(SplitValue::Numeric(2.0)),
+            null_direction: Some(NullDirection::Left),
             left: Some(Box::new(Tree {
                 feature_index: None,
                 threshold: None,
                 left: None,
                 right: None,
                 prediction: Some(1.0),
+                null_direction: None,
             })),
             right: Some(Box::new(Tree {
                 feature_index: None,
@@ -199,6 +206,7 @@ mod tests {
                 left: None,
                 right: None,
                 prediction: Some(0.0),
+                null_direction: None,
             })),
             prediction: None,
         };

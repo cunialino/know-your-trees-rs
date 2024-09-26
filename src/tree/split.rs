@@ -4,7 +4,7 @@ use arrow::array::{Array, BooleanArray};
 use arrow::record_batch::RecordBatch;
 
 use super::array_traits::ArrayConversions;
-use super::scores::SplitFnType;
+use super::scores::{SplitFnType, SplitScore};
 
 #[derive(Debug, PartialEq)]
 pub enum SplitValue {
@@ -43,7 +43,7 @@ pub fn best_split(
     data: &RecordBatch,
     target: &dyn Array,
     split_function: &SplitFnType,
-) -> Option<(f64, String, BooleanArray, SplitValue)> {
+) -> Option<(SplitScore, String, BooleanArray, SplitValue)> {
     data.schema()
         .fields()
         .iter()
@@ -55,12 +55,7 @@ pub fn best_split(
         .filter_map(|(name, split_value, filter_mask)| {
             let score = split_function(target, &filter_mask);
             if score.is_some() {
-                Some((
-                    score.unwrap().score,
-                    name.to_string(),
-                    filter_mask,
-                    split_value,
-                ))
+                Some((score.unwrap(), name.to_string(), filter_mask, split_value))
             } else {
                 None
             }

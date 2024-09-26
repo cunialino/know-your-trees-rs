@@ -1,6 +1,9 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::compute::{filter, is_null, not};
+use core::str;
+use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fmt::Display;
 
 pub type SplitFnType = dyn Fn(&dyn Array, &BooleanArray) -> Option<SplitScore>;
 pub type PredFnType = dyn Fn(&dyn Array) -> f64;
@@ -38,12 +41,38 @@ pub struct ScoreConfig {
     pub initial_prediction: Option<f64>,
 }
 
+impl Display for NullDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let printable = match self {
+            Self::Left => "Left",
+            Self::Right => "Right",
+        };
+        write!(f, "{}", printable)
+    }
+}
+
 impl SplitScore {
     fn new(score: f64, null_direction: NullDirection) -> SplitScore {
         SplitScore {
             score,
             null_direction,
         }
+    }
+}
+
+impl PartialOrd for SplitScore {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.score.partial_cmp(&other.score)
+    }
+}
+
+impl Display for SplitScore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Score: {}\nNullDirection: {}",
+            self.score, self.null_direction
+        )
     }
 }
 
