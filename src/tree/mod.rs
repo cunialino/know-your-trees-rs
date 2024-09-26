@@ -1,4 +1,4 @@
-pub mod tree;
+mod array_traits;
 mod scores;
 mod split;
-mod array_traits;
+pub mod tree;
