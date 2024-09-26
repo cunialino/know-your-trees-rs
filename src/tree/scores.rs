@@ -5,17 +5,17 @@ use std::collections::HashMap;
 pub type SplitFnType = dyn Fn(&dyn Array, &BooleanArray) -> Option<SplitScore>;
 pub type PredFnType = dyn Fn(&dyn Array) -> f64;
 
-#[derive(Debug, Clone, Default)]
-pub enum TreeDirection {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum NullDirection {
     #[default]
     Left,
     Right,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SplitScore {
     pub score: f64,
-    pub null_direction: TreeDirection,
+    pub null_direction: NullDirection,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -39,7 +39,7 @@ pub struct ScoreConfig {
 }
 
 impl SplitScore {
-    fn new(score: f64, null_direction: TreeDirection) -> SplitScore {
+    fn new(score: f64, null_direction: NullDirection) -> SplitScore {
         SplitScore {
             score,
             null_direction,
@@ -68,9 +68,9 @@ trait DiffScore: Copy + Clone {
         let score_nl = (l_gra + n_gra).powi(2) / (l_hes + n_hes) + r_gra.powi(2) / r_hes;
         let score_nr = l_gra.powi(2) / l_hes + (r_gra + n_gra).powi(2) / (r_hes + n_hes);
         if score_nl <= score_nr {
-            Some(SplitScore::new(score_nl, TreeDirection::Left))
+            Some(SplitScore::new(score_nl, NullDirection::Left))
         } else {
-            Some(SplitScore::new(score_nr, TreeDirection::Right))
+            Some(SplitScore::new(score_nr, NullDirection::Right))
         }
     }
 }
@@ -98,7 +98,7 @@ trait StdScore: Copy + Clone {
             let r_score = self.score(filter(arr, &not(split_mask).unwrap()).unwrap().as_ref());
             let score =
                 l_w as f64 / total_len as f64 * l_score + r_w as f64 / total_len as f64 * r_score;
-            Some(SplitScore::new(score, TreeDirection::default()))
+            Some(SplitScore::new(score, NullDirection::default()))
         } else {
             None
         }
