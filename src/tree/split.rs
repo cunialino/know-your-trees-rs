@@ -1,5 +1,3 @@
-use core::f64;
-
 use arrow::array::{Array, BooleanArray};
 use arrow::record_batch::RecordBatch;
 

@@ -1,6 +1,5 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::compute::{filter, is_null, not};
-use core::str;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::Display;
