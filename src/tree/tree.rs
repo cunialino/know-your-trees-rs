@@ -8,7 +8,7 @@ use std::usize;
 
 #[derive(Debug, Default)]
 pub struct TreeConfig {
-    max_depth: usize,
+    pub max_depth: usize,
 }
 
 #[derive(Debug, PartialEq)]

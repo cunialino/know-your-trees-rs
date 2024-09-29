@@ -1,7 +1,11 @@
 [package]
-name = "know-your-trees-re"
+name = "kyt"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-arrow = "51.0.0"
+arrow = { version = "51.0.0", features = ["csv"] }
+
+[[bin]]
+name = "profile_tree_fit"
+path = "profile/profile_tree_fit.rs"
