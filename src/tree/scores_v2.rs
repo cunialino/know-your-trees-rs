@@ -49,21 +49,17 @@ impl Score for Gini {
 pub trait DiffScore: Score {
     fn grad_and_hess(&self, target: &[Self::TargetType]) -> (f64, f64);
     fn split_score(&self, target: &[Self::TargetType], split_mask: &[bool]) -> f64 {
-        let left_arr: Vec<Self::TargetType> = target
-            .iter()
-            .zip(split_mask.iter())
-            .filter(|(_, &p)| p)
-            .map(|(&v, _)| v) // Map the filtered values (which are all true here)
-            .collect();
-        let right_arr: Vec<Self::TargetType> = target
-            .iter()
-            .zip(split_mask.iter())
-            .filter(|(_, &p)| !p)
-            .map(|(&v, _)| v) // Map the filtered values (which are all true here)
-            .collect();
-
-        let (l_gra, l_hes) = self.grad_and_hess(left_arr.as_ref());
-        let (r_gra, r_hes) = self.grad_and_hess(right_arr.as_ref());
+        let (l_gra, l_hes, r_gra, r_hes) = target.iter().zip(split_mask.iter()).fold(
+            (0.0, 0.0, 0.0, 0.0),
+            |(l_gra, l_hes, r_gra, r_hes), (&v, &is_left)| {
+                let (grad, hess) = self.grad_and_hess(&[v]);
+                if is_left {
+                    (l_gra + grad, l_hes + hess, r_gra, r_hes)
+                } else {
+                    (l_gra, l_hes, r_gra + grad, r_hes + hess)
+                }
+            },
+        );
         l_gra.powi(2) / l_hes + r_gra.powi(2) / r_hes
     }
 }
