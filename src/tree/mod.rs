@@ -36,12 +36,22 @@ impl Tree {
             prediction: Some(pred),
         })
     }
-    fn add_or_stop(split_info: SplitInfo, left: Box<Tree>, right: Box<Tree>) -> Tree {
-        Tree {
-            split_info: Some(split_info),
-            left: Some(left),
-            right: Some(right),
-            prediction: None,
+    fn add_or_stop<T, S: Score<T>>(
+        split_info: &SplitInfo,
+        node: Tree,
+        target: &impl Target<T>,
+        score_fn: &S,
+    ) -> Tree {
+        if node.prediction.is_some() {
+            node
+        } else if let Some(ns) = node.split_info.as_ref() {
+            if ns.score.score != split_info.score.score {
+                *Self::build_leaf(target, score_fn)
+            } else {
+                node
+            }
+        } else {
+            *Self::build_leaf(target, score_fn)
         }
     }
     fn build_tree_recursive<T, S: Score<T>>(
@@ -85,7 +95,15 @@ impl Tree {
                 split_function,
             );
             if let (Some(left_tree), Some(right_tree)) = (left_tree, right_tree) {
-                Some(Box::new(Self::add_or_stop(split_info, left_tree, right_tree)))
+                let left_tree = Self::add_or_stop(&split_info, *left_tree, target, split_function);
+                let right_tree =
+                    Self::add_or_stop(&split_info, *right_tree, &right_tar, split_function);
+                Some(Box::new(Tree {
+                    split_info: Some(split_info),
+                    left: Some(Box::new(left_tree)),
+                    right: Some(Box::new(right_tree)),
+                    prediction: None,
+                }))
             } else {
                 Some(Tree::build_leaf(target, split_function))
             }
@@ -195,7 +213,6 @@ mod tests {
             })),
             prediction: None,
         };
-        dbg!(data);
         assert_eq!(
             Some(Box::new(output_tree)),
             tree,
