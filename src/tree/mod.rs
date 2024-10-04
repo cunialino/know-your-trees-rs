@@ -203,13 +203,13 @@ mod tests {
                 split_info: None,
                 left: None,
                 right: None,
-                prediction: Some(1.0),
+                prediction: Some(2.0),
             })),
             right: Some(Box::new(Tree {
                 split_info: None,
                 left: None,
                 right: None,
-                prediction: Some(0.0),
+                prediction: Some(-2.0),
             })),
             prediction: None,
         };

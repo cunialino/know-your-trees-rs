@@ -192,7 +192,7 @@ impl Score<bool> for Logit {
             let (vg, vh) = self.grad_and_hes(v);
             (g + vg, h + vh)
         });
-        g.powi(2) / h
+        - g / h
     }
 }
 
