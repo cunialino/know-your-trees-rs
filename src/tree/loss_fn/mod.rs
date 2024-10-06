@@ -5,13 +5,15 @@ use std::collections::HashMap;
 
 use split_values::{NullDirection, SplitScore};
 
+use super::split::Target;
+
 pub trait Score<T> {
     fn split_score(
         &self,
-        target: impl Iterator<Item = T>,
+        target: &impl Target<T>,
         filter_mask: impl Iterator<Item = Option<bool>>,
     ) -> Option<split_values::SplitScore>;
-    fn pred(&self, target: impl Iterator<Item = T>) -> f64;
+    fn pred(&self, target: &impl Target<T>) -> f64;
 }
 
 pub struct Gini;
@@ -76,7 +78,7 @@ impl Gini {
 impl Score<bool> for Gini {
     fn split_score(
         &self,
-        target: impl Iterator<Item = bool>,
+        target: &impl Target<bool>,
         filter_mask: impl Iterator<Item = Option<bool>>,
     ) -> Option<split_values::SplitScore> {
         let mut left_counts: HashMap<bool, usize> = HashMap::new();
@@ -87,7 +89,7 @@ impl Score<bool> for Gini {
         let mut right_total = 0.0;
         let mut null_total = 0.0;
 
-        for (val, mask) in target.zip(filter_mask) {
+        for (val, mask) in target.iter().zip(filter_mask) {
             match mask {
                 Some(true) => {
                     *left_counts.entry(val).or_insert(0) += 1;
@@ -117,8 +119,8 @@ impl Score<bool> for Gini {
             ))
         }
     }
-    fn pred(&self, target: impl Iterator<Item = bool>) -> f64 {
-        let (true_cnt, len) = target.fold((0., 0.), |(tc, l), v| {
+    fn pred(&self, target: &impl Target<bool>) -> f64 {
+        let (true_cnt, len) = target.iter().fold((0., 0.), |(tc, l), v| {
             let add_cnt = if v { 1. } else { 0. };
             (tc + add_cnt, l + 1.)
         });
@@ -149,7 +151,7 @@ impl Logit {
 impl Score<bool> for Logit {
     fn split_score(
         &self,
-        target: impl Iterator<Item = bool>,
+        target: &impl Target<bool>,
         filter_mask: impl Iterator<Item = Option<bool>>,
     ) -> Option<SplitScore> {
         let mut l_g = 0.;
@@ -158,7 +160,7 @@ impl Score<bool> for Logit {
         let mut r_h = 0.;
         let mut n_g = 0.;
         let mut n_h = 0.;
-        for (bool_v, m) in target.zip(filter_mask) {
+        for (bool_v, m) in target.iter().zip(filter_mask) {
             let (gv, hv) = self.grad_and_hes(bool_v);
             if let Some(true) = m {
                 l_g += gv;
@@ -187,8 +189,8 @@ impl Score<bool> for Logit {
             None
         }
     }
-    fn pred(&self, target: impl Iterator<Item = bool>) -> f64 {
-        let (g, h) = target.fold((0., 0.), |(g, h), v| {
+    fn pred(&self, target: &impl Target<bool>) -> f64 {
+        let (g, h) = target.iter().fold((0., 0.), |(g, h), v| {
             let (vg, vh) = self.grad_and_hes(v);
             (g + vg, h + vh)
         });
@@ -214,7 +216,7 @@ impl std::fmt::Display for ScoringFunction {
 impl Score<bool> for ScoringFunction {
     fn split_score(
         &self,
-        target: impl Iterator<Item = bool>,
+        target: &impl Target<bool>,
         filter_mask: impl Iterator<Item = Option<bool>>,
     ) -> Option<SplitScore> {
         match self {
@@ -222,7 +224,7 @@ impl Score<bool> for ScoringFunction {
             ScoringFunction::Logit(l) => l.split_score(target, filter_mask),
         }
     }
-    fn pred(&self, target: impl Iterator<Item = bool>) -> f64 {
+    fn pred(&self, target: &impl Target<bool>) -> f64 {
         match self {
             ScoringFunction::Gini(g) => g.pred(target),
             ScoringFunction::Logit(l) => l.pred(target),

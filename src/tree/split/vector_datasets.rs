@@ -87,7 +87,7 @@ where
             .flat_map(|(name, values)| {
                 values.find_splits().flat_map(move |split_val| {
                     let mask = values.mask(split_val);
-                    let score = target.score(mask, score_function);
+                    let score = score_function.split_score(target, mask);
                     score.map(|sc| SplitInfo::new(name.clone(), split_val.into(), sc))
                 })
             })
@@ -182,12 +182,12 @@ mod test {
 
         let filter_1 = vec![Some(true), Some(false), Some(false)];
         let output_1 = (g1).powi(2) / h + (g2 + g3).powi(2) / (init_prd.powi(2) * 2.);
-        let res_1 = score_fn.split_score(tar.clone().into_iter(), filter_1.into_iter());
+        let res_1 = score_fn.split_score(&tar, filter_1.into_iter());
         assert_eq!(- output_1, res_1.unwrap().score, "Wrong Score");
 
         let filter_2 = vec![Some(true), Some(true), Some(false)];
         let output_2 = (g1 + g2).powi(2) / (2. * h) + (g3).powi(2) / h;
-        let res_2 = score_fn.split_score(tar.into_iter(), filter_2.into_iter());
+        let res_2 = score_fn.split_score(&tar, filter_2.into_iter());
         assert_eq!(-output_2, res_2.unwrap().score, "Wrong Score");
     }
 }

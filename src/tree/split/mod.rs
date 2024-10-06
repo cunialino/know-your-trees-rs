@@ -1,7 +1,7 @@
 pub mod vector_datasets;
 
 use super::loss_fn::{
-    split_values::{NullDirection, SplitInfo, SplitScore},
+    split_values::{NullDirection, SplitInfo},
     Score,
 };
 
@@ -17,13 +17,6 @@ pub trait Target<T> {
     fn len(&self) -> usize;
     fn get(&self, i: usize) -> &'_ T;
     fn iter(&self) -> impl Iterator<Item = T>;
-    fn score<S: Score<T>>(
-        &self,
-        filter_mask: impl Iterator<Item = Option<bool>>,
-        score_fn: &S,
-    ) -> Option<SplitScore> {
-        score_fn.split_score(self.iter(), filter_mask)
-    }
     fn split(
         &mut self,
         mask: impl Iterator<Item = Option<bool>>,

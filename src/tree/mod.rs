@@ -28,7 +28,7 @@ impl Tree {
         Tree::build_tree_recursive(samples, target, max_depth, score_fn)
     }
     fn build_leaf<T, S: Score<T>>(target: &impl Target<T>, split_function: &S) -> Box<Tree> {
-        let pred = split_function.pred(target.iter());
+        let pred = split_function.pred(target);
         Box::new(Tree {
             split_info: None,
             left: None,
