@@ -63,52 +63,66 @@ impl Tree {
         if max_depth == 0 {
             return Some(Tree::build_leaf(target, split_function));
         }
-        if let Some(split_info) = samples.find_best_split(target, split_function) {
-            // this feels like a nightmare came true, collecting AND cloning.
-            // There MUST be a smarter way. For the sake of movin on, I'll just
-            // do it this way for now.
-            let mask = samples
-                .rows()
-                .map(|row| {
-                    let value = row
-                        .iter()
-                        .find(|(name, _)| **name == split_info.name)
-                        .map(|(_, val)| (*val).into());
+        match samples.find_best_split(target, split_function) {
+            Ok(split_info) => {
+                // this feels like a nightmare came true, collecting AND cloning.
+                // There MUST be a smarter way. For the sake of movin on, I'll just
+                // do it this way for now.
+                let mask = samples
+                    .rows()
+                    .map(|row| {
+                        let value = row
+                            .iter()
+                            .find(|(name, _)| **name == split_info.name)
+                            .map(|(_, val)| (*val).into());
 
-                    value.map(|v| v < split_info.value)
-                })
-                .collect::<Vec<Option<bool>>>();
-            let mut right_samples =
-                samples.split(mask.clone().into_iter(), split_info.score.null_direction);
-            let mut right_tar =
-                target.split(mask.clone().into_iter(), split_info.score.null_direction);
-            let max_depth = if split_info.score.score == 0. {
-                0
-            } else {
-                max_depth - 1
-            };
-            let left_tree = Self::build_tree_recursive(samples, target, max_depth, split_function);
-            let right_tree = Self::build_tree_recursive(
-                &mut right_samples,
-                &mut right_tar,
-                max_depth,
-                split_function,
-            );
-            if let (Some(left_tree), Some(right_tree)) = (left_tree, right_tree) {
-                let left_tree = Self::add_or_stop(&split_info, *left_tree, target, split_function);
-                let right_tree =
-                    Self::add_or_stop(&split_info, *right_tree, &right_tar, split_function);
-                Some(Box::new(Tree {
-                    split_info: Some(split_info),
-                    left: Some(Box::new(left_tree)),
-                    right: Some(Box::new(right_tree)),
-                    prediction: None,
-                }))
-            } else {
-                Some(Tree::build_leaf(target, split_function))
+                        value.map(|v| v < split_info.value)
+                    })
+                    .collect::<Vec<Option<bool>>>();
+                let mut right_samples =
+                    samples.split(mask.clone().into_iter(), split_info.score.null_direction);
+                let mut right_tar =
+                    target.split(mask.clone().into_iter(), split_info.score.null_direction);
+                let max_depth = if split_info.score.score == 0. {
+                    0
+                } else {
+                    max_depth - 1
+                };
+                let left_tree =
+                    Self::build_tree_recursive(samples, target, max_depth, split_function);
+                let right_tree = Self::build_tree_recursive(
+                    &mut right_samples,
+                    &mut right_tar,
+                    max_depth,
+                    split_function,
+                );
+                if let (Some(left_tree), Some(right_tree)) = (left_tree, right_tree) {
+                    let left_tree =
+                        Self::add_or_stop(&split_info, *left_tree, target, split_function);
+                    let right_tree =
+                        Self::add_or_stop(&split_info, *right_tree, &right_tar, split_function);
+                    Some(Box::new(Tree {
+                        split_info: Some(split_info),
+                        left: Some(Box::new(left_tree)),
+                        right: Some(Box::new(right_tree)),
+                        prediction: None,
+                    }))
+                } else {
+                    Some(Tree::build_leaf(target, split_function))
+                }
             }
-        } else {
-            Some(Tree::build_leaf(target, split_function))
+            Err(error) => match error {
+                split::BestSplitNotFound::NoSplitRequired => {
+                    Some(Tree::build_leaf(target, split_function))
+                }
+                split::BestSplitNotFound::Score(score_err) => match score_err {
+                    loss_fn::ScoreError::InvalidSplit(_) | loss_fn::ScoreError::PerfectSplit => {
+                        Some(Tree::build_leaf(target, split_function))
+                    }
+                    _ => panic!("Could not split data: {}", error),
+                },
+                _ => panic!("Could not split data: {}", error),
+            },
         }
     }
     fn predict_single_value<'a, T: Into<f64> + Copy>(&'a self, sample: &'a [(&'a str, T)]) -> f64 {

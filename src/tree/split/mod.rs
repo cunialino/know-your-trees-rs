@@ -2,8 +2,33 @@ pub mod vector_datasets;
 
 use super::loss_fn::{
     split_values::{NullDirection, SplitInfo},
-    Score,
+    Score, ScoreError,
 };
+
+pub enum BestSplitNotFound {
+    Score(ScoreError),
+    ScoreNotComparable((SplitInfo, SplitInfo)),
+    NoSplitRequired,
+}
+
+impl std::fmt::Display for BestSplitNotFound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BestSplitNotFound::Score(err) => write!(f, "{}", err),
+            BestSplitNotFound::ScoreNotComparable((s1, s2)) => {
+                write!(f, "Cannot compare score {} and score {}", s1, s2)
+            }
+            BestSplitNotFound::NoSplitRequired => write!(f, "No need for further splitting"),
+        }
+    }
+}
+
+impl From<ScoreError> for BestSplitNotFound {
+    fn from(value: ScoreError) -> Self {
+        BestSplitNotFound::Score(value)
+    }
+}
+
 
 pub trait Feature<T: PartialOrd> {
     fn len(&self) -> usize;
@@ -28,7 +53,7 @@ pub trait DataSet {
         &self,
         target: &impl Target<T>,
         score_function: &S,
-    ) -> Option<SplitInfo>;
+    ) -> Result<SplitInfo, BestSplitNotFound>;
     fn num_rows(&self) -> usize;
     fn split(
         &mut self,

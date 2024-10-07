@@ -7,12 +7,30 @@ use split_values::{NullDirection, SplitScore};
 
 use super::split::Target;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScoreError {
+    NanReturn,
+    PerfectSplit,
+    InvalidSplit(usize),
+}
+
+impl std::fmt::Display for ScoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NanReturn => write!(f, "NaN Score"),
+            Self::PerfectSplit => write!(f, "Split already perfect"),
+            Self::InvalidSplit(l) => write!(f, "Cannot split target of len {}", l),
+
+        }
+    }
+}
+
 pub trait Score<T> {
     fn split_score(
         &self,
         target: &impl Target<T>,
         filter_mask: impl Iterator<Item = Option<bool>>,
-    ) -> Option<split_values::SplitScore>;
+    ) -> Result<split_values::SplitScore, ScoreError>;
     fn pred(&self, target: &impl Target<T>) -> f64;
 }
 
@@ -80,7 +98,7 @@ impl Score<bool> for Gini {
         &self,
         target: &impl Target<bool>,
         filter_mask: impl Iterator<Item = Option<bool>>,
-    ) -> Option<split_values::SplitScore> {
+    ) -> Result<split_values::SplitScore, ScoreError> {
         let mut left_counts: HashMap<bool, usize> = HashMap::new();
         let mut right_counts: HashMap<bool, usize> = HashMap::new();
         let mut null_counts: HashMap<bool, usize> = HashMap::new();
@@ -107,9 +125,9 @@ impl Score<bool> for Gini {
         }
         let total_len = left_total + right_total + null_total;
         if total_len == left_total || total_len == right_total || total_len == null_total {
-            None
+            Err(ScoreError::PerfectSplit)
         } else {
-            Some(self.impurity(
+            Ok(self.impurity(
                 &left_counts,
                 &right_counts,
                 &null_counts,
@@ -153,7 +171,10 @@ impl Score<bool> for Logit {
         &self,
         target: &impl Target<bool>,
         filter_mask: impl Iterator<Item = Option<bool>>,
-    ) -> Option<SplitScore> {
+    ) -> Result<SplitScore, ScoreError> {
+        if target.len() < 2 {
+            return Err(ScoreError::InvalidSplit(target.len()));
+        }
         let mut l_g = 0.;
         let mut l_h = 0.;
         let mut r_g = 0.;
@@ -176,17 +197,17 @@ impl Score<bool> for Logit {
         let score_on_left = (l_g + n_g).powi(2) / (l_h + n_h) + r_g.powi(2) / r_h;
         let score_on_right = (r_g + n_g).powi(2) / (r_h + n_h) + l_g.powi(2) / l_h;
         if score_on_left >= score_on_right {
-            Some(SplitScore {
+            Ok(SplitScore {
                 score: -score_on_left,
                 null_direction: NullDirection::Left,
             })
         } else if score_on_right.is_finite() {
-            Some(SplitScore {
+            Ok(SplitScore {
                 score: -score_on_right,
                 null_direction: NullDirection::Right,
             })
         } else {
-            None
+            Err(ScoreError::NanReturn)
         }
     }
     fn pred(&self, target: &impl Target<bool>) -> f64 {
@@ -194,7 +215,7 @@ impl Score<bool> for Logit {
             let (vg, vh) = self.grad_and_hes(v);
             (g + vg, h + vh)
         });
-        - g / h
+        -g / h
     }
 }
 
@@ -218,7 +239,7 @@ impl Score<bool> for ScoringFunction {
         &self,
         target: &impl Target<bool>,
         filter_mask: impl Iterator<Item = Option<bool>>,
-    ) -> Option<SplitScore> {
+    ) -> Result<SplitScore, ScoreError> {
         match self {
             ScoringFunction::Gini(g) => g.split_score(target, filter_mask),
             ScoringFunction::Logit(l) => l.split_score(target, filter_mask),

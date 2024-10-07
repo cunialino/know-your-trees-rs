@@ -5,6 +5,7 @@ use crate::tree::split::Feature;
 use core::cmp::Ordering;
 use std::collections::HashMap;
 
+use super::BestSplitNotFound;
 use super::DataSet;
 use super::Target;
 
@@ -81,20 +82,27 @@ where
         &self,
         target: &impl Target<T>,
         score_function: &S,
-    ) -> Option<SplitInfo> {
-        self.iter() // Convert HashMap into an iterator
+    ) -> Result<SplitInfo, BestSplitNotFound> {
+        let min_sp = |s1: SplitInfo, s2: SplitInfo| match s1.partial_cmp(&s2) {
+            Some(Ordering::Less) | Some(Ordering::Equal) => Ok(s1),
+            Some(Ordering::Greater) => Ok(s2),
+            None => Err(BestSplitNotFound::ScoreNotComparable((s1, s2))),
+        };
+        self.iter()
             .flat_map(|(name, values)| {
-                values.find_splits().flat_map(move |split_val| {
+                values.find_splits().map(move |split_val| {
                     let mask = values.mask(split_val);
-                    let score = score_function.split_score(target, mask);
-                    score.map(|sc| SplitInfo::new(name.clone(), split_val.into(), sc))
+                    let score = score_function.split_score(target, mask)?;
+                    Ok(SplitInfo::new(name.clone(), split_val.into(), score))
                 })
             })
-            .min_by(|split1, split2| {
-                split1
-                    .partial_cmp(&split2)
-                    .unwrap_or(std::cmp::Ordering::Equal)
+            .reduce(|acc, el| match (acc, el) {
+                (Ok(acc), Ok(el)) => min_sp(acc, el),
+                (Ok(acc), Err(_)) => Ok(acc),
+                (Err(_), Ok(el)) => Ok(el),
+                (Err(acc), Err(_)) => Err(BestSplitNotFound::from(acc)),
             })
+            .unwrap_or(Err(BestSplitNotFound::NoSplitRequired))
     }
     fn num_rows(&self) -> usize {
         self.values().map(|vec| vec.len()).max().unwrap()
@@ -157,7 +165,7 @@ mod test {
         let df = HashMap::from([("f1".to_owned(), vec![1., 2., 3.])]);
         let tar = vec![true, true, false];
         let score_fn = ScoringFunction::Logit(Logit::new(0.5));
-        if let Some(split_info) = df.find_best_split(&tar, &score_fn) {
+        if let Ok(split_info) = df.find_best_split(&tar, &score_fn) {
             println!(
                 "Split col: {}\nSplit val: {}",
                 split_info.name, split_info.value
@@ -167,7 +175,6 @@ mod test {
         } else {
             panic!("Cannot find split")
         }
-        
     }
     #[test]
     fn test_logit_split_score() {
@@ -182,7 +189,7 @@ mod test {
         let filter_1 = vec![Some(true), Some(false), Some(false)];
         let output_1 = (g1).powi(2) / h + (g2 + g3).powi(2) / (init_prd.powi(2) * 2.);
         let res_1 = score_fn.split_score(&tar, filter_1.into_iter());
-        assert_eq!(- output_1, res_1.unwrap().score, "Wrong Score");
+        assert_eq!(-output_1, res_1.unwrap().score, "Wrong Score");
 
         let filter_2 = vec![Some(true), Some(true), Some(false)];
         let output_2 = (g1 + g2).powi(2) / (2. * h) + (g3).powi(2) / h;
