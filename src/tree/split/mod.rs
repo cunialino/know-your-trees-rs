@@ -5,12 +5,11 @@ use super::loss_fn::{
     Score,
 };
 
-pub trait Feature {
-    type Item: PartialOrd;
+pub trait Feature<T: PartialOrd> {
     fn len(&self) -> usize;
-    fn get(&self, i: usize) -> &'_ Self::Item;
-    fn find_splits(&self) -> impl Iterator<Item = Self::Item> + '_;
-    fn mask<'a>(&'a self, split: Self::Item) -> impl Iterator<Item = Option<bool>> + 'a;
+    fn get(&self, i: usize) -> &'_ T;
+    fn find_splits(&self) -> impl Iterator<Item = T> + '_;
+    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a;
 }
 
 pub trait Target<T> {

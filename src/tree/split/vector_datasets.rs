@@ -8,18 +8,17 @@ use std::collections::HashMap;
 use super::DataSet;
 use super::Target;
 
-impl<T> Feature for std::vec::Vec<T>
+impl<T> Feature<T> for std::vec::Vec<T>
 where
     T: Into<f64> + PartialOrd + Copy,
 {
-    type Item = T;
     fn len(&self) -> usize {
         self.len()
     }
-    fn get(&self, i: usize) -> &'_ Self::Item {
+    fn get(&self, i: usize) -> &'_ T {
         &self[i]
     }
-    fn mask<'a>(&'a self, split: Self::Item) -> impl Iterator<Item = Option<bool>> + 'a {
+    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a {
         self.iter().map(move |v| match v.partial_cmp(&split) {
             Some(Ordering::Less) => Some(true),
             Some(Ordering::Equal) => Some(false),
@@ -27,7 +26,7 @@ where
             _ => None,
         })
     }
-    fn find_splits(&self) -> impl Iterator<Item = Self::Item> + '_ {
+    fn find_splits(&self) -> impl Iterator<Item = T> + '_ {
         self.iter().copied()
     }
 }
