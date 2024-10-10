@@ -13,12 +13,6 @@ impl<T> Feature<T> for std::vec::Vec<T>
 where
     T: Into<f64> + PartialOrd + Copy,
 {
-    fn len(&self) -> usize {
-        self.len()
-    }
-    fn get(&self, i: usize) -> &'_ T {
-        &self[i]
-    }
     fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a {
         self.iter().map(move |v| match v.partial_cmp(&split) {
             Some(Ordering::Less) => Some(true),
@@ -36,9 +30,6 @@ impl Target<bool> for std::vec::Vec<bool> {
     fn len(&self) -> usize {
         self.len()
     }
-    fn get(&self, i: usize) -> &'_ bool {
-        &self[i]
-    }
     fn iter(&self) -> impl Iterator<Item = bool> {
         self.as_slice().iter().copied()
     }
@@ -52,7 +43,7 @@ impl Target<bool> for std::vec::Vec<bool> {
         let mut i = 0;
 
         self.retain(|value| {
-            let goes_left = match mask.get(i).unwrap() {
+            let goes_left = match mask.get(i).expect("You fucked up big times") {
                 Some(true) => true,
                 Some(false) => {
                     right_values.push(*value);
@@ -147,7 +138,7 @@ where
     fn rows(&self) -> impl Iterator<Item = Vec<(&str, impl Into<f64> + Copy)>> {
         (0..self.num_rows()).into_iter().map(|idx| {
             self.iter()
-                .map(|(name, col)| (name.as_str(), *col.get(idx)))
+                .map(|(name, col)| (name.as_str(), col.get(idx).unwrap().to_owned()))
                 // Should be ok to collect here, we are collecting
                 // at most the number of columns of df (usually not very high)
                 .collect::<Vec<(&str, F)>>()
