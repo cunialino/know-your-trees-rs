@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use super::BestSplitNotFound;
 use super::DataSet;
+use super::DataSetRowsError;
 use super::Target;
 
 impl<T> Feature<T> for std::vec::Vec<T>
@@ -95,8 +96,12 @@ where
             })
             .unwrap_or(Err(BestSplitNotFound::NoSplitRequired))
     }
-    fn num_rows(&self) -> usize {
-        self.values().map(|vec| vec.len()).max().unwrap()
+    fn num_rows(&self) -> Result<usize, DataSetRowsError> {
+        let max = self.values().map(|vec| vec.len()).max();
+        match max {
+            Some(m) => Ok(m),
+            None => Err(DataSetRowsError::EmptyDF),
+        }
     }
     fn split(
         &mut self,
@@ -135,14 +140,23 @@ where
 
         right
     }
-    fn rows(&self) -> impl Iterator<Item = Vec<(&str, impl Into<f64> + Copy)>> {
-        (0..self.num_rows()).into_iter().map(|idx| {
+    fn rows(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<Vec<(&str, impl Into<f64> + Copy)>, DataSetRowsError>>,
+        DataSetRowsError,
+    > {
+        let indices = 0..self.num_rows()?;
+        Ok(indices.into_iter().map(|idx| {
             self.iter()
-                .map(|(name, col)| (name.as_str(), col.get(idx).unwrap().to_owned()))
+                .map(|(name, col)| match col.get(idx) {
+                    Some(v) => Ok((name.as_str(), v.to_owned())),
+                    None => Err(DataSetRowsError::IllFormedColumn(name.to_owned(), idx)),
+                })
                 // Should be ok to collect here, we are collecting
                 // at most the number of columns of df (usually not very high)
-                .collect::<Vec<(&str, F)>>()
-        })
+                .collect::<Result<Vec<(&str, F)>, DataSetRowsError>>()
+        }))
     }
 }
 

@@ -7,23 +7,16 @@ use split_values::{NullDirection, SplitScore};
 
 use super::split::Target;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
 pub enum ScoreError {
+    #[error("NaN Score")]
     NanReturn,
+    #[error("Split already perfect")]
     PerfectSplit,
+    #[error("CAnnot split target of len {0}")]
     InvalidSplit(usize),
 }
 
-impl std::fmt::Display for ScoreError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NanReturn => write!(f, "NaN Score"),
-            Self::PerfectSplit => write!(f, "Split already perfect"),
-            Self::InvalidSplit(l) => write!(f, "Cannot split target of len {}", l),
-
-        }
-    }
-}
 
 pub trait Score<T> {
     fn split_score(

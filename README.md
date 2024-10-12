@@ -9,7 +9,7 @@ Ideally I would like to implement everything, from id3 to boosting ensembles, bu
 
 - [ ] CART trees: this is just for learning rust
     - [x] basic cart with numerical features. Gini + Logit Scores
-    - [ ] Better error handling: I would like to implement error handling instead of unwrapping. 
+    - [x] Better error handling: I would like to implement error handling instead of unwrapping. 
     Primary reason is unwrap is not really idiomatic, then I would like to learn proper error handling in rust
     - [ ] Testing and fixing for null values in features. Should be pretty easy, but you never know
     - [ ] Extend score support

@@ -36,7 +36,7 @@ fn bench_tree_fit_size_10000(c: &mut Criterion) {
                 let (mut data, mut target) = create_sample_data(10000);
                 // Time only the part you want to benchmark
                 let start = Instant::now();
-                Tree::fit(
+                let _ = Tree::fit(
                     black_box(&mut data),
                     black_box(&mut target),
                     black_box(&tree_config),

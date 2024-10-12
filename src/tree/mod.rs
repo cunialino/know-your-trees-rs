@@ -1,12 +1,20 @@
 use loss_fn::{split_values::SplitInfo, Score};
 use split::{DataSet, Target};
 
+use self::split::DataSetRowsError;
+
 pub mod loss_fn;
 pub mod split;
 
 #[derive(Debug, Default)]
 pub struct TreeConfig {
     pub max_depth: usize,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TreeError {
+    #[error("Tree Error: {0}")]
+    DataSetRowsError(#[from] crate::tree::split::DataSetRowsError),
 }
 
 #[derive(Debug, PartialEq)]
@@ -23,18 +31,18 @@ impl Tree {
         target: &mut impl Target<T>,
         tree_config: &TreeConfig,
         score_fn: &S,
-    ) -> Option<Box<Tree>> {
+    ) -> Result<Tree, TreeError> {
         let max_depth = tree_config.max_depth.clone();
         Tree::build_tree_recursive(samples, target, max_depth, score_fn)
     }
-    fn build_leaf<T, S: Score<T>>(target: &impl Target<T>, split_function: &S) -> Box<Tree> {
+    fn build_leaf<T, S: Score<T>>(target: &impl Target<T>, split_function: &S) -> Tree {
         let pred = split_function.pred(target);
-        Box::new(Tree {
+        Tree {
             split_info: None,
             left: None,
             right: None,
             prediction: Some(pred),
-        })
+        }
     }
     fn add_or_stop<T, S: Score<T>>(
         split_info: &SplitInfo,
@@ -46,12 +54,12 @@ impl Tree {
             node
         } else if let Some(ns) = node.split_info.as_ref() {
             if ns.score.score != split_info.score.score {
-                *Self::build_leaf(target, score_fn)
+                Self::build_leaf(target, score_fn)
             } else {
                 node
             }
         } else {
-            *Self::build_leaf(target, score_fn)
+            Self::build_leaf(target, score_fn)
         }
     }
     fn build_tree_recursive<T, S: Score<T>>(
@@ -59,9 +67,9 @@ impl Tree {
         target: &mut impl Target<T>,
         max_depth: usize,
         split_function: &S,
-    ) -> Option<Box<Tree>> {
+    ) -> Result<Tree, TreeError> {
         if max_depth == 0 {
-            return Some(Tree::build_leaf(target, split_function));
+            return Ok(Tree::build_leaf(target, split_function));
         }
         match samples.find_best_split(target, split_function) {
             Ok(split_info) => {
@@ -69,16 +77,16 @@ impl Tree {
                 // There MUST be a smarter way. For the sake of movin on, I'll just
                 // do it this way for now.
                 let mask = samples
-                    .rows()
+                    .rows()?
                     .map(|row| {
-                        let value = row
-                            .iter()
-                            .find(|(name, _)| **name == split_info.name)
-                            .map(|(_, val)| (*val).into());
-
-                        value.map(|v| v < split_info.value)
+                        row.map(|r| {
+                            r.iter()
+                                .find(|(name, _)| **name == split_info.name)
+                                .map(|(_, val)| (*val).into())
+                                .map(|v| v < split_info.value)
+                        })
                     })
-                    .collect::<Vec<Option<bool>>>();
+                    .collect::<Result<Vec<Option<bool>>, DataSetRowsError>>()?;
                 let mut right_samples =
                     samples.split(mask.clone().into_iter(), split_info.score.null_direction);
                 let mut right_tar =
@@ -89,37 +97,32 @@ impl Tree {
                     max_depth - 1
                 };
                 let left_tree =
-                    Self::build_tree_recursive(samples, target, max_depth, split_function);
+                    Self::build_tree_recursive(samples, target, max_depth, split_function)?;
                 let right_tree = Self::build_tree_recursive(
                     &mut right_samples,
                     &mut right_tar,
                     max_depth,
                     split_function,
-                );
-                if let (Some(left_tree), Some(right_tree)) = (left_tree, right_tree) {
-                    let left_tree =
-                        Self::add_or_stop(&split_info, *left_tree, target, split_function);
-                    let right_tree =
-                        Self::add_or_stop(&split_info, *right_tree, &right_tar, split_function);
-                    Some(Box::new(Tree {
-                        split_info: Some(split_info),
-                        left: Some(Box::new(left_tree)),
-                        right: Some(Box::new(right_tree)),
-                        prediction: None,
-                    }))
-                } else {
-                    Some(Tree::build_leaf(target, split_function))
-                }
+                )?;
+                let left_tree = Self::add_or_stop(&split_info, left_tree, target, split_function);
+                let right_tree =
+                    Self::add_or_stop(&split_info, right_tree, &right_tar, split_function);
+                Ok(Tree {
+                    split_info: Some(split_info),
+                    left: Some(Box::new(left_tree)),
+                    right: Some(Box::new(right_tree)),
+                    prediction: None,
+                })
             }
             Err(error) => match error {
                 split::BestSplitNotFound::NoSplitRequired => {
-                    Some(Tree::build_leaf(target, split_function))
+                    Ok(Tree::build_leaf(target, split_function))
                 }
                 split::BestSplitNotFound::Score(score_err) => match score_err {
                     loss_fn::ScoreError::InvalidSplit(_) | loss_fn::ScoreError::PerfectSplit => {
-                        Some(Tree::build_leaf(target, split_function))
+                        Ok(Tree::build_leaf(target, split_function))
                     }
-                    _ => panic!("Could not split data: {}", error),
+                    _ => panic!("Could not split data: {}", score_err),
                 },
                 _ => panic!("Could not split data: {}", error),
             },
@@ -145,11 +148,11 @@ impl Tree {
                 .expect("Something went wrong in building the tree")
         }
     }
-    pub fn predict(&self, samples: impl DataSet) -> Vec<f64> {
+    pub fn predict(&self, samples: impl DataSet) -> Result<Vec<f64>, DataSetRowsError> {
         samples
-            .rows()
-            .map(|row| self.predict_single_value(row.as_slice()))
-            .collect()
+            .rows()?
+            .map(|row| Ok(self.predict_single_value(row?.as_slice())))
+            .collect::<Result<Vec<f64>, DataSetRowsError>>()
     }
 }
 
@@ -192,8 +195,8 @@ mod tests {
             prediction: None,
         };
         assert_eq!(
-            Some(Box::new(output_tree)),
-            tree,
+            output_tree,
+            tree.expect("Tree did not fit correctly"),
             "Tree did not fit correctly"
         );
     }
@@ -228,8 +231,8 @@ mod tests {
             prediction: None,
         };
         assert_eq!(
-            Some(Box::new(output_tree)),
-            tree,
+            output_tree,
+            tree.expect("Tree did not fit correctly"),
             "Tree did not fit correctly"
         );
     }

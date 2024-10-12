@@ -1,32 +1,27 @@
 pub mod vector_datasets;
 
+
 use super::loss_fn::{
     split_values::{NullDirection, SplitInfo},
     Score, ScoreError,
 };
 
+#[derive(Debug, thiserror::Error)]
 pub enum BestSplitNotFound {
-    Score(ScoreError),
+    #[error("Split not found: {0}")]
+    Score(#[from] ScoreError),
+    #[error("Split not found: cannot compare score {} and {}", 0.0, 0.1)]
     ScoreNotComparable((SplitInfo, SplitInfo)),
+    #[error("Split not found: split not needed")]
     NoSplitRequired,
 }
 
-impl std::fmt::Display for BestSplitNotFound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BestSplitNotFound::Score(err) => write!(f, "{}", err),
-            BestSplitNotFound::ScoreNotComparable((s1, s2)) => {
-                write!(f, "Cannot compare score {} and score {}", s1, s2)
-            }
-            BestSplitNotFound::NoSplitRequired => write!(f, "No need for further splitting"),
-        }
-    }
-}
-
-impl From<ScoreError> for BestSplitNotFound {
-    fn from(value: ScoreError) -> Self {
-        BestSplitNotFound::Score(value)
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum DataSetRowsError {
+    #[error("Dataset Row Error: Ill formed dataframe, {0}, {1}")]
+    IllFormedColumn(String, usize),
+    #[error("Dataset Row Error: DF has no columns")]
+    EmptyDF,
 }
 
 pub trait Feature<T: PartialOrd> {
@@ -50,11 +45,11 @@ pub trait DataSet {
         target: &impl Target<T>,
         score_function: &S,
     ) -> Result<SplitInfo, BestSplitNotFound>;
-    fn num_rows(&self) -> usize;
+    fn num_rows(&self) -> Result<usize, DataSetRowsError>;
     fn split(
         &mut self,
         mask: impl Iterator<Item = Option<bool>>,
         null_direction: NullDirection,
     ) -> Self;
-    fn rows(&self) -> impl Iterator<Item = Vec<(&str, impl Into<f64> + Copy)>>;
+    fn rows(&self) -> Result<impl Iterator<Item = Result<Vec<(&str, impl Into<f64> + Copy)>, DataSetRowsError>>, DataSetRowsError>;
 }
