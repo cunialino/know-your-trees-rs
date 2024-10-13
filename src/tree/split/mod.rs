@@ -1,6 +1,5 @@
 pub mod vector_datasets;
 
-
 use super::loss_fn::{
     split_values::{NullDirection, SplitInfo},
     Score, ScoreError,
@@ -24,14 +23,8 @@ pub enum DataSetRowsError {
     EmptyDF,
 }
 
-pub trait Feature<T: PartialOrd> {
-    fn find_splits(&self) -> impl Iterator<Item = T> + '_;
-    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a;
-}
-
-pub trait Target<T> {
+pub trait Splittable {
     fn len(&self) -> usize;
-    fn iter(&self) -> impl Iterator<Item = T>;
     fn split(
         &mut self,
         mask: impl Iterator<Item = Option<bool>>,
@@ -39,17 +32,26 @@ pub trait Target<T> {
     ) -> Self;
 }
 
-pub trait DataSet {
+pub trait Feature<T: PartialOrd>: Splittable {
+    fn find_splits(&self) -> impl Iterator<Item = T> + '_;
+    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a;
+}
+
+pub trait Target<T>: Splittable {
+    fn iter(&self) -> impl Iterator<Item = T>;
+}
+
+pub trait DataSet: Splittable {
     fn find_best_split<T, S: Score<T>>(
         &self,
         target: &impl Target<T>,
         score_function: &S,
     ) -> Result<SplitInfo, BestSplitNotFound>;
     fn num_rows(&self) -> Result<usize, DataSetRowsError>;
-    fn split(
-        &mut self,
-        mask: impl Iterator<Item = Option<bool>>,
-        null_direction: NullDirection,
-    ) -> Self;
-    fn rows(&self) -> Result<impl Iterator<Item = Result<Vec<(&str, Option<impl Into<f64> + Copy>)>, DataSetRowsError>>, DataSetRowsError>;
+    fn rows(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<Vec<(&str, Option<impl Into<f64> + Copy>)>, DataSetRowsError>>,
+        DataSetRowsError,
+    >;
 }

@@ -8,7 +8,36 @@ use std::collections::HashMap;
 use super::BestSplitNotFound;
 use super::DataSet;
 use super::DataSetRowsError;
+use super::Splittable;
 use super::Target;
+
+impl<T> Splittable for std::vec::Vec<T> {
+    fn len(&self) -> usize {
+        self.len()
+    }
+    fn split(
+        &mut self,
+        mask: impl Iterator<Item = Option<bool>>,
+        null_direction: NullDirection,
+    ) -> Self {
+        let mut right_values = Vec::new();
+        let mut left_values = Vec::new();
+
+        for (value, should_go_left) in self.drain(..).zip(mask.map(|m| match m {
+            Some(b) => b,
+            None => matches!(null_direction, NullDirection::Left),
+        })) {
+            if should_go_left {
+                left_values.push(value);
+            } else {
+                right_values.push(value);
+            }
+        }
+
+        *self = left_values;
+        right_values
+    }
+}
 
 impl<T> Feature<T> for std::vec::Vec<T>
 where
@@ -50,45 +79,33 @@ where
 }
 
 impl Target<bool> for std::vec::Vec<bool> {
-    fn len(&self) -> usize {
-        self.len()
-    }
     fn iter(&self) -> impl Iterator<Item = bool> {
         self.as_slice().iter().copied()
     }
-    fn split(
-        &mut self,
-        mask: impl Iterator<Item = Option<bool>>,
-        null_direction: crate::tree::loss_fn::split_values::NullDirection,
-    ) -> Self {
-        let mut right_values = vec![];
+}
+
+impl<F> Splittable for HashMap<String, std::vec::Vec<F>>
+where
+    F: Into<f64> + PartialOrd + Copy,
+{
+    fn len(&self) -> usize {
+        self.values().map(|vec| vec.len()).max().unwrap()
+    }
+    fn split(&mut self, mask: impl Iterator<Item = Option<bool>>, null_direction: NullDirection) -> Self {
+        let mut right = HashMap::with_capacity(self.len());
+
         let mask: Vec<_> = mask.collect();
-        let mut i = 0;
 
-        self.retain(|value| {
-            let goes_left = match mask.get(i).expect("You fucked up big times") {
-                Some(true) => true,
-                Some(false) => {
-                    right_values.push(*value);
-                    false
-                }
-                None => match null_direction {
-                    NullDirection::Left => true,
-                    NullDirection::Right => {
-                        right_values.push(*value);
-                        false
-                    }
-                },
-            };
-            i += 1;
-            goes_left
-        });
+        for (column_name, values) in self.iter_mut() {
+            let right_values = values.split(mask.iter().copied(), null_direction);
+            right.insert(column_name.clone(), right_values);
+        }
+        right
 
-        return right_values;
     }
 }
 
-impl<F> DataSet for HashMap<String, Vec<F>>
+impl<F> DataSet for HashMap<String, std::vec::Vec<F>>
 where
     F: Into<f64> + PartialOrd + Copy,
 {
@@ -124,43 +141,6 @@ where
             Some(m) => Ok(m),
             None => Err(DataSetRowsError::EmptyDF),
         }
-    }
-    fn split(
-        &mut self,
-        mask: impl Iterator<Item = Option<bool>>,
-        _null_direction: crate::tree::loss_fn::split_values::NullDirection,
-    ) -> Self {
-        let mut right = HashMap::with_capacity(self.len());
-
-        // Initialize the mask as a Vec since we'll need to reuse it
-        let mask: Vec<_> = mask.collect();
-
-        for (column_name, values) in self.iter_mut() {
-            let mut right_values = Vec::new();
-            let mut i = 0;
-
-            // Use drain_filter when it's stabilized
-            values.retain(|value| {
-                let goes_left = match mask.get(i) {
-                    Some(Some(true)) => true,
-                    Some(Some(false)) => {
-                        right_values.push(*value);
-                        false
-                    }
-                    Some(None) => {
-                        right_values.push(*value);
-                        false
-                    }
-                    None => true, // Handle case where mask is shorter than values
-                };
-                i += 1;
-                goes_left
-            });
-
-            right.insert(column_name.clone(), right_values);
-        }
-
-        right
     }
     fn rows(
         &self,
