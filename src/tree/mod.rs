@@ -1,8 +1,6 @@
 use loss_fn::{split_values::SplitInfo, Score};
 use split::{DataSet, Target};
 
-use self::split::DataSetRowsError;
-
 pub mod loss_fn;
 pub mod split;
 
@@ -15,6 +13,10 @@ pub struct TreeConfig {
 pub enum TreeError {
     #[error("Tree Error: {0}")]
     DataSetRowsError(#[from] crate::tree::split::DataSetRowsError),
+    #[error("Could not find feature {0} in dataset")]
+    CouldNotFindFeature(String),
+    #[error("Found leaf with no prediction")]
+    NoPredictionInLeaf,
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,14 +81,16 @@ impl Tree {
                 let mask = samples
                     .rows()?
                     .map(|row| {
-                        row.map(|r| {
-                            r.iter()
-                                .find(|(name, _)| **name == split_info.name)
-                                .map(|(_, val)| (*val).into())
-                                .map(|v| v < split_info.value)
-                        })
+                        row?.iter()
+                            .find(|(name, _)| **name == split_info.name)
+                            .ok_or(TreeError::CouldNotFindFeature(split_info.name.clone()))
+                            .map(|(_, val)| match val {
+                                Some(v) => Ok(Some(v.to_owned().into() < split_info.value)),
+                                None => Ok(None),
+                            })
                     })
-                    .collect::<Result<Vec<Option<bool>>, DataSetRowsError>>()?;
+                    .flatten()
+                    .collect::<Result<Vec<Option<bool>>, TreeError>>()?;
                 let mut right_samples =
                     samples.split(mask.clone().into_iter(), split_info.score.null_direction);
                 let mut right_tar =
@@ -128,7 +132,10 @@ impl Tree {
             },
         }
     }
-    fn predict_single_value<'a, T: Into<f64> + Copy>(&'a self, sample: &'a [(&'a str, T)]) -> f64 {
+    fn predict_single_value<'a, T: Into<f64> + Copy>(
+        &'a self,
+        sample: &'a [(&'a str, Option<T>)],
+    ) -> Result<f64, TreeError> {
         if let (Some(split_info), Some(l), Some(r)) = (
             self.split_info.as_ref(),
             self.left.as_ref(),
@@ -138,21 +145,28 @@ impl Tree {
                 .iter()
                 .find(|(name, _)| split_info.name.eq(name))
                 .expect(format!("Feature {} not in dataset", split_info.name).as_str());
-            if (*val).into() < split_info.value {
-                l.predict_single_value(sample)
-            } else {
-                r.predict_single_value(sample)
+            match val {
+                Some(val) => {
+                    if (*val).into() < split_info.value {
+                        l.predict_single_value(sample)
+                    } else {
+                        r.predict_single_value(sample)
+                    }
+                }
+                None => match split_info.score.null_direction {
+                    loss_fn::split_values::NullDirection::Left => l.predict_single_value(sample),
+                    loss_fn::split_values::NullDirection::Right => r.predict_single_value(sample),
+                },
             }
         } else {
-            self.prediction
-                .expect("Something went wrong in building the tree")
+            self.prediction.ok_or(TreeError::NoPredictionInLeaf)
         }
     }
-    pub fn predict(&self, samples: impl DataSet) -> Result<Vec<f64>, DataSetRowsError> {
+    pub fn predict(&self, samples: impl DataSet) -> Result<Vec<f64>, TreeError> {
         samples
             .rows()?
-            .map(|row| Ok(self.predict_single_value(row?.as_slice())))
-            .collect::<Result<Vec<f64>, DataSetRowsError>>()
+            .map(|row| self.predict_single_value(row?.as_slice()))
+            .collect()
     }
 }
 

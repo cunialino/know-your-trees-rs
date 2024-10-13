@@ -26,6 +26,28 @@ where
         self.iter().copied()
     }
 }
+impl<T> Feature<T> for std::vec::Vec<Option<T>>
+where
+    T: Into<f64> + PartialOrd + Copy,
+{
+    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a {
+        self.iter().map(move |v| {
+            if let Some(v) = v {
+                match v.partial_cmp(&split) {
+                    Some(Ordering::Less) => Some(true),
+                    Some(Ordering::Equal) => Some(false),
+                    Some(Ordering::Greater) => Some(false),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+    }
+    fn find_splits(&self) -> impl Iterator<Item = T> + '_ {
+        self.iter().filter_map(|v| v.to_owned())
+    }
+}
 
 impl Target<bool> for std::vec::Vec<bool> {
     fn len(&self) -> usize {
@@ -143,19 +165,19 @@ where
     fn rows(
         &self,
     ) -> Result<
-        impl Iterator<Item = Result<Vec<(&str, impl Into<f64> + Copy)>, DataSetRowsError>>,
+        impl Iterator<Item = Result<Vec<(&str, Option<impl Into<f64> + Copy>)>, DataSetRowsError>>,
         DataSetRowsError,
     > {
         let indices = 0..self.num_rows()?;
         Ok(indices.into_iter().map(|idx| {
             self.iter()
                 .map(|(name, col)| match col.get(idx) {
-                    Some(v) => Ok((name.as_str(), v.to_owned())),
+                    Some(v) => Ok((name.as_str(), Some(v.to_owned()))),
                     None => Err(DataSetRowsError::IllFormedColumn(name.to_owned(), idx)),
                 })
                 // Should be ok to collect here, we are collecting
                 // at most the number of columns of df (usually not very high)
-                .collect::<Result<Vec<(&str, F)>, DataSetRowsError>>()
+                .collect()
         }))
     }
 }
@@ -200,5 +222,10 @@ mod test {
         let output_2 = (g1 + g2).powi(2) / (2. * h) + (g3).powi(2) / h;
         let res_2 = score_fn.split_score(&tar, filter_2.into_iter());
         assert_eq!(-output_2, res_2.unwrap().score, "Wrong Score");
+    }
+    #[test]
+    fn test_null_feat() {
+        let feat_split = vec![Some(1.), None, None].find_splits().next().unwrap();
+        assert_eq!(1., feat_split, "Wrong splits for null vals")
     }
 }

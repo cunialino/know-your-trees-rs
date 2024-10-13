@@ -51,5 +51,5 @@ pub trait DataSet {
         mask: impl Iterator<Item = Option<bool>>,
         null_direction: NullDirection,
     ) -> Self;
-    fn rows(&self) -> Result<impl Iterator<Item = Result<Vec<(&str, impl Into<f64> + Copy)>, DataSetRowsError>>, DataSetRowsError>;
+    fn rows(&self) -> Result<impl Iterator<Item = Result<Vec<(&str, Option<impl Into<f64> + Copy>)>, DataSetRowsError>>, DataSetRowsError>;
 }
