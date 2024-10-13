@@ -11,7 +11,7 @@ Ideally I would like to implement everything, from id3 to boosting ensembles, bu
     - [x] basic cart with numerical features. Gini + Logit Scores
     - [x] Better error handling: I would like to implement error handling instead of unwrapping. 
     Primary reason is unwrap is not really idiomatic, then I would like to learn proper error handling in rust
-    - [ ] Testing and fixing for null values in features. Should be pretty easy, but you never know
+    - [x] Testing and fixing for null values in features. Should be pretty easy, but you never know
     - [ ] Extend score support
     - [ ] Optimization: we are calculating grad and hess from scratch everytime for target, we could just compute it once.
     - [ ] Optimization: parallelize everything on cpu (either tokio or rayon)
