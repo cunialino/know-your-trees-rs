@@ -17,8 +17,7 @@ pub enum ScoreError {
     InvalidSplit(usize),
 }
 
-
-pub trait Score<T> {
+pub trait Score<T>: Sync {
     fn split_score(
         &self,
         target: &impl Target<T>,

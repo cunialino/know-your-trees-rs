@@ -37,7 +37,7 @@ pub trait Feature<T: PartialOrd>: Splittable {
     fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a;
 }
 
-pub trait Target<T>: Splittable {
+pub trait Target<T>: Splittable + Sync {
     fn iter(&self) -> impl Iterator<Item = T>;
 }
 

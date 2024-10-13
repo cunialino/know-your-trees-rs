@@ -1,3 +1,7 @@
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelBridge;
+use rayon::iter::ParallelIterator;
+
 use crate::tree::loss_fn::split_values::NullDirection;
 use crate::tree::loss_fn::split_values::SplitInfo;
 use crate::tree::loss_fn::Score;
@@ -91,7 +95,11 @@ where
     fn len(&self) -> usize {
         self.values().map(|vec| vec.len()).max().unwrap()
     }
-    fn split(&mut self, mask: impl Iterator<Item = Option<bool>>, null_direction: NullDirection) -> Self {
+    fn split(
+        &mut self,
+        mask: impl Iterator<Item = Option<bool>>,
+        null_direction: NullDirection,
+    ) -> Self {
         let mut right = HashMap::with_capacity(self.len());
 
         let mask: Vec<_> = mask.collect();
@@ -101,13 +109,12 @@ where
             right.insert(column_name.clone(), right_values);
         }
         right
-
     }
 }
 
 impl<F> DataSet for HashMap<String, std::vec::Vec<F>>
 where
-    F: Into<f64> + PartialOrd + Copy,
+    F: Into<f64> + PartialOrd + Copy + Send + Copy + Sync,
 {
     fn find_best_split<T, S: Score<T>>(
         &self,
@@ -119,21 +126,23 @@ where
             Some(Ordering::Greater) => Ok(s2),
             None => Err(BestSplitNotFound::ScoreNotComparable((s1, s2))),
         };
-        self.iter()
+        self.par_iter()
             .flat_map(|(name, values)| {
-                values.find_splits().map(move |split_val| {
+                values.find_splits().par_bridge().map(move |split_val| {
                     let mask = values.mask(split_val);
                     let score = score_function.split_score(target, mask)?;
                     Ok(SplitInfo::new(name.clone(), split_val.into(), score))
                 })
             })
-            .reduce(|acc, el| match (acc, el) {
-                (Ok(acc), Ok(el)) => min_sp(acc, el),
-                (Ok(acc), Err(_)) => Ok(acc),
-                (Err(_), Ok(el)) => Ok(el),
-                (Err(acc), Err(_)) => Err(BestSplitNotFound::from(acc)),
-            })
-            .unwrap_or(Err(BestSplitNotFound::NoSplitRequired))
+            .reduce(
+                || Err(BestSplitNotFound::NoSplitRequired),
+                |acc, el| match (acc, el) {
+                    (Ok(acc), Ok(el)) => min_sp(acc, el),
+                    (Ok(acc), Err(_)) => Ok(acc),
+                    (Err(_), Ok(el)) => Ok(el),
+                    (Err(acc), Err(_)) => Err(BestSplitNotFound::from(acc)),
+                },
+            )
     }
     fn num_rows(&self) -> Result<usize, DataSetRowsError> {
         let max = self.values().map(|vec| vec.len()).max();
@@ -164,6 +173,7 @@ where
 
 #[cfg(test)]
 mod test {
+
     use super::*;
     use crate::tree::loss_fn::Logit;
     use crate::tree::loss_fn::ScoringFunction;

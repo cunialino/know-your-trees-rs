@@ -14,7 +14,7 @@ Ideally I would like to implement everything, from id3 to boosting ensembles, bu
     - [x] Testing and fixing for null values in features. Should be pretty easy, but you never know
     - [ ] Extend score support
     - [ ] Optimization: we are calculating grad and hess from scratch everytime for target, we could just compute it once.
-    - [ ] Optimization: parallelize everything on cpu (either tokio or rayon)
+    - [x] Optimization: parallelize everything on cpu (either tokio or rayon)
     - [ ] Feat: insert categorical features into algo. This is to improve understanding of trees
     - [ ] Feat: implement symmetric trees building. A lot to learn on trees.
 

@@ -22,4 +22,5 @@ codegen-units = 1
 rpath = false
 
 [dependencies]
+rayon = "1.10.0"
 thiserror = "1.0.64"
