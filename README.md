@@ -17,6 +17,7 @@ Ideally I would like to implement everything, from id3 to boosting ensembles, bu
     - [x] Optimization: parallelize everything on cpu (either tokio or rayon)
     - [ ] Feat: insert categorical features into algo. This is to improve understanding of trees
     - [ ] Feat: implement symmetric trees building. A lot to learn on trees.
+    - [ ] Data: implement everything for arrow again, using conditional compilation.
 
 - [ ] Ensembles: this should be almost trivial once tree is well defined
     - [ ] Random Forest
