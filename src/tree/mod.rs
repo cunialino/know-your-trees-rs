@@ -35,7 +35,7 @@ impl Tree {
         score_fn: &S,
     ) -> Result<Tree, TreeError> {
         let max_depth = tree_config.max_depth.clone();
-        Tree::build_tree_recursive(samples, target, max_depth, score_fn)
+        Tree::build_tree_recursive(samples, target, max_depth, score_fn, None)
     }
     fn build_leaf<T, S: Score<T>>(target: &impl Target<T>, split_function: &S) -> Tree {
         let pred = split_function.pred(target);
@@ -46,35 +46,24 @@ impl Tree {
             prediction: Some(pred),
         }
     }
-    fn add_or_stop<T, S: Score<T>>(
-        split_info: &SplitInfo,
-        node: Tree,
-        target: &impl Target<T>,
-        score_fn: &S,
-    ) -> Tree {
-        if node.prediction.is_some() {
-            node
-        } else if let Some(ns) = node.split_info.as_ref() {
-            if ns.score.score != split_info.score.score {
-                Self::build_leaf(target, score_fn)
-            } else {
-                node
-            }
-        } else {
-            Self::build_leaf(target, score_fn)
-        }
-    }
     fn build_tree_recursive<T, S: Score<T>>(
         samples: &mut impl DataSet,
         target: &mut impl Target<T>,
         max_depth: usize,
         split_function: &S,
+        split_info_parent: Option<&SplitInfo>,
     ) -> Result<Tree, TreeError> {
         if max_depth == 0 {
             return Ok(Tree::build_leaf(target, split_function));
         }
         match samples.find_best_split(target, split_function) {
             Ok(split_info) => {
+                //Not really sure why logit does not fit correctly with this one
+                if let Some(_) = split_info_parent {
+                    if split_info.score.score == 0. {
+                        return Ok(Tree::build_leaf(target, split_function));
+                    }
+                }
                 // this feels like a nightmare came true, collecting AND cloning.
                 // There MUST be a smarter way. For the sake of movin on, I'll just
                 // do it this way for now.
@@ -95,22 +84,15 @@ impl Tree {
                     samples.split(mask.clone().into_iter(), split_info.score.null_direction);
                 let mut right_tar =
                     target.split(mask.clone().into_iter(), split_info.score.null_direction);
-                let max_depth = if split_info.score.score == 0. {
-                    0
-                } else {
-                    max_depth - 1
-                };
                 let left_tree =
-                    Self::build_tree_recursive(samples, target, max_depth, split_function)?;
+                    Self::build_tree_recursive(samples, target, max_depth, split_function, Some(&split_info))?;
                 let right_tree = Self::build_tree_recursive(
                     &mut right_samples,
                     &mut right_tar,
                     max_depth,
                     split_function,
+                    Some(&split_info),
                 )?;
-                let left_tree = Self::add_or_stop(&split_info, left_tree, target, split_function);
-                let right_tree =
-                    Self::add_or_stop(&split_info, right_tree, &right_tar, split_function);
                 Ok(Tree {
                     split_info: Some(split_info),
                     left: Some(Box::new(left_tree)),
@@ -226,7 +208,7 @@ mod tests {
                 "F1".to_string(),
                 2.,
                 SplitScore {
-                    score: -3.,
+                    score: -8. / 3.,
                     null_direction: loss_fn::split_values::NullDirection::Left,
                 },
             )),

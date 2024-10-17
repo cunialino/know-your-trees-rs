@@ -186,8 +186,9 @@ impl Score<bool> for Logit {
                 n_h += hv;
             }
         }
-        let score_on_left = (l_g + n_g).powi(2) / (l_h + n_h) + r_g.powi(2) / r_h;
-        let score_on_right = (r_g + n_g).powi(2) / (r_h + n_h) + l_g.powi(2) / l_h;
+        let current = (l_g + n_g + r_g).powi(2) / (l_h + n_h + r_h);
+        let score_on_left = (l_g + n_g).powi(2) / (l_h + n_h) + r_g.powi(2) / r_h - current;
+        let score_on_right = (r_g + n_g).powi(2) / (r_h + n_h) + l_g.powi(2) / l_h - current;
         if score_on_left >= score_on_right {
             Ok(SplitScore {
                 score: -score_on_left,

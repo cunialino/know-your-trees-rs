@@ -203,13 +203,14 @@ mod test {
         let g3 = init_prd;
         let h = init_prd.powi(2);
 
+        let curr = (g1 + g2 + g3).powi(2) / (3. * h);
         let filter_1 = vec![Some(true), Some(false), Some(false)];
-        let output_1 = (g1).powi(2) / h + (g2 + g3).powi(2) / (init_prd.powi(2) * 2.);
+        let output_1 = (g1).powi(2) / h + (g2 + g3).powi(2) / (init_prd.powi(2) * 2.) - curr;
         let res_1 = score_fn.split_score(&tar, filter_1.into_iter());
         assert_eq!(-output_1, res_1.unwrap().score, "Wrong Score");
 
         let filter_2 = vec![Some(true), Some(true), Some(false)];
-        let output_2 = (g1 + g2).powi(2) / (2. * h) + (g3).powi(2) / h;
+        let output_2 = (g1 + g2).powi(2) / (2. * h) + (g3).powi(2) / h - curr;
         let res_2 = score_fn.split_score(&tar, filter_2.into_iter());
         assert_eq!(-output_2, res_2.unwrap().score, "Wrong Score");
     }
