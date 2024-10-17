@@ -23,18 +23,18 @@ pub enum DataSetRowsError {
     EmptyDF,
 }
 
-pub trait Splittable {
+pub trait Splittable: Sized {
     fn len(&self) -> usize;
     fn split(
-        &mut self,
+        &self,
         mask: impl Iterator<Item = Option<bool>>,
         null_direction: NullDirection,
-    ) -> Self;
+    ) -> (Self, Self);
 }
 
 pub trait Feature<T: PartialOrd>: Splittable {
     fn find_splits(&self) -> impl Iterator<Item = T> + '_;
-    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a;
+    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a + Clone;
 }
 
 pub trait Target<T>: Splittable + Sync {
@@ -46,7 +46,7 @@ pub trait DataSet: Splittable {
         &self,
         target: &impl Target<T>,
         score_function: &S,
-    ) -> Result<SplitInfo, BestSplitNotFound>;
+    ) -> Result<(SplitInfo, impl Iterator<Item = Option<bool>> + Clone), BestSplitNotFound>;
     fn num_rows(&self) -> Result<usize, DataSetRowsError>;
     fn rows(
         &self,

@@ -29,8 +29,8 @@ pub struct Tree {
 
 impl Tree {
     pub fn fit<T, S: Score<T>>(
-        samples: &mut impl DataSet,
-        target: &mut impl Target<T>,
+        samples: &impl DataSet,
+        target: &impl Target<T>,
         tree_config: &TreeConfig,
         score_fn: &S,
     ) -> Result<Tree, TreeError> {
@@ -47,8 +47,8 @@ impl Tree {
         }
     }
     fn build_tree_recursive<T, S: Score<T>>(
-        samples: &mut impl DataSet,
-        target: &mut impl Target<T>,
+        samples: &impl DataSet,
+        target: &impl Target<T>,
         max_depth: usize,
         split_function: &S,
         split_info_parent: Option<&SplitInfo>,
@@ -57,38 +57,26 @@ impl Tree {
             return Ok(Tree::build_leaf(target, split_function));
         }
         match samples.find_best_split(target, split_function) {
-            Ok(split_info) => {
+            Ok((split_info, mask)) => {
                 //Not really sure why logit does not fit correctly with this one
                 if let Some(_) = split_info_parent {
                     if split_info.score.score == 0. {
                         return Ok(Tree::build_leaf(target, split_function));
                     }
                 }
-                // this feels like a nightmare came true, collecting AND cloning.
-                // There MUST be a smarter way. For the sake of movin on, I'll just
-                // do it this way for now.
-                let mask = samples
-                    .rows()?
-                    .map(|row| {
-                        row?.iter()
-                            .find(|(name, _)| **name == split_info.name)
-                            .ok_or(TreeError::CouldNotFindFeature(split_info.name.clone()))
-                            .map(|(_, val)| match val {
-                                Some(v) => Ok(Some(v.to_owned().into() < split_info.value)),
-                                None => Ok(None),
-                            })
-                    })
-                    .flatten()
-                    .collect::<Result<Vec<Option<bool>>, TreeError>>()?;
-                let mut right_samples =
-                    samples.split(mask.clone().into_iter(), split_info.score.null_direction);
-                let mut right_tar =
-                    target.split(mask.clone().into_iter(), split_info.score.null_direction);
-                let left_tree =
-                    Self::build_tree_recursive(samples, target, max_depth, split_function, Some(&split_info))?;
+                let (left_samples, right_samples) =
+                    samples.split(mask.clone(), split_info.score.null_direction);
+                let (left_tar, right_tar) = target.split(mask, split_info.score.null_direction);
+                let left_tree = Self::build_tree_recursive(
+                    &left_samples,
+                    &left_tar,
+                    max_depth,
+                    split_function,
+                    Some(&split_info),
+                )?;
                 let right_tree = Self::build_tree_recursive(
-                    &mut right_samples,
-                    &mut right_tar,
+                    &right_samples,
+                    &right_tar,
                     max_depth,
                     split_function,
                     Some(&split_info),
@@ -162,11 +150,11 @@ mod tests {
 
     #[test]
     fn test_tree() {
-        let mut data = HashMap::from([("F1".to_string(), vec![1., 2., 3.])]);
-        let mut target = vec![true, false, false];
+        let data = HashMap::from([("F1".to_string(), vec![1., 2., 3.])]);
+        let target = vec![true, false, false];
         let tree_config = TreeConfig { max_depth: 2 };
         let score_fn = ScoringFunction::Gini(loss_fn::Gini);
-        let tree = Tree::fit(&mut data, &mut target, &tree_config, &score_fn);
+        let tree = Tree::fit(&data, &target, &tree_config, &score_fn);
         let output_tree = Tree {
             split_info: Some(SplitInfo::new(
                 "F1".to_string(),
@@ -198,11 +186,11 @@ mod tests {
     }
     #[test]
     fn test_with_logit() {
-        let mut data = HashMap::from([("F1".to_string(), vec![1., 2., 3.])]);
-        let mut target = vec![true, false, false];
+        let data = HashMap::from([("F1".to_string(), vec![1., 2., 3.])]);
+        let target = vec![true, false, false];
         let tree_config = TreeConfig { max_depth: 2 };
         let score_fn = ScoringFunction::Logit(loss_fn::Logit::new(0.5));
-        let tree = Tree::fit(&mut data, &mut target, &tree_config, &score_fn);
+        let tree = Tree::fit(&data, &target, &tree_config, &score_fn);
         let output_tree = Tree {
             split_info: Some(SplitInfo::new(
                 "F1".to_string(),

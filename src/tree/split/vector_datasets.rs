@@ -15,31 +15,33 @@ use super::DataSetRowsError;
 use super::Splittable;
 use super::Target;
 
-impl<T> Splittable for std::vec::Vec<T> {
+impl<T> Splittable for std::vec::Vec<T> 
+where
+    T: Copy
+{
     fn len(&self) -> usize {
         self.len()
     }
     fn split(
-        &mut self,
+        &self,
         mask: impl Iterator<Item = Option<bool>>,
         null_direction: NullDirection,
-    ) -> Self {
+    ) -> (Self, Self) {
         let mut right_values = Vec::new();
         let mut left_values = Vec::new();
 
-        for (value, should_go_left) in self.drain(..).zip(mask.map(|m| match m {
+        for (value, should_go_left) in self.into_iter().zip(mask.map(|m| match m {
             Some(b) => b,
             None => matches!(null_direction, NullDirection::Left),
         })) {
             if should_go_left {
-                left_values.push(value);
+                left_values.push(value.to_owned());
             } else {
-                right_values.push(value);
+                right_values.push(value.to_owned());
             }
         }
 
-        *self = left_values;
-        right_values
+        (left_values, right_values)
     }
 }
 
@@ -47,7 +49,7 @@ impl<T> Feature<T> for std::vec::Vec<T>
 where
     T: Into<f64> + PartialOrd + Copy,
 {
-    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a {
+    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a + Clone {
         self.iter().map(move |v| match v.partial_cmp(&split) {
             Some(Ordering::Less) => Some(true),
             Some(Ordering::Equal) => Some(false),
@@ -63,7 +65,7 @@ impl<T> Feature<T> for std::vec::Vec<Option<T>>
 where
     T: Into<f64> + PartialOrd + Copy,
 {
-    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a {
+    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a + Clone {
         self.iter().map(move |v| {
             if let Some(v) = v {
                 match v.partial_cmp(&split) {
@@ -96,19 +98,21 @@ where
         self.values().map(|vec| vec.len()).max().unwrap()
     }
     fn split(
-        &mut self,
+        &self,
         mask: impl Iterator<Item = Option<bool>>,
         null_direction: NullDirection,
-    ) -> Self {
+    ) -> (Self, Self) {
+        let mut left = HashMap::with_capacity(self.len());
         let mut right = HashMap::with_capacity(self.len());
 
         let mask: Vec<_> = mask.collect();
 
-        for (column_name, values) in self.iter_mut() {
-            let right_values = values.split(mask.iter().copied(), null_direction);
+        for (column_name, values) in self.into_iter() {
+            let (left_vals, right_values) = values.split(mask.iter().copied(), null_direction);
+            left.insert(column_name.clone(), left_vals);
             right.insert(column_name.clone(), right_values);
         }
-        right
+        (left, right)
     }
 }
 
@@ -120,18 +124,18 @@ where
         &self,
         target: &impl Target<T>,
         score_function: &S,
-    ) -> Result<SplitInfo, BestSplitNotFound> {
-        let min_sp = |s1: SplitInfo, s2: SplitInfo| match s1.partial_cmp(&s2) {
+    ) -> Result<(SplitInfo, impl Iterator<Item = Option<bool>> + Clone), BestSplitNotFound> {
+        let min_sp = |s1: (SplitInfo, _), s2: (SplitInfo, _)| match s1.0.partial_cmp(&s2.0) {
             Some(Ordering::Less) | Some(Ordering::Equal) => Ok(s1),
             Some(Ordering::Greater) => Ok(s2),
-            None => Err(BestSplitNotFound::ScoreNotComparable((s1, s2))),
+            None => Err(BestSplitNotFound::ScoreNotComparable((s1.0, s2.0))),
         };
         self.par_iter()
             .flat_map(|(name, values)| {
                 values.find_splits().par_bridge().map(move |split_val| {
                     let mask = values.mask(split_val);
-                    let score = score_function.split_score(target, mask)?;
-                    Ok(SplitInfo::new(name.clone(), split_val.into(), score))
+                    let score = score_function.split_score(target, mask.clone())?;
+                    Ok(( SplitInfo::new(name.clone(), split_val.into(), score), mask))
                 })
             })
             .reduce(
@@ -182,7 +186,7 @@ mod test {
         let df = HashMap::from([("f1".to_owned(), vec![1., 2., 3.])]);
         let tar = vec![true, true, false];
         let score_fn = ScoringFunction::Logit(Logit::new(0.5));
-        if let Ok(split_info) = df.find_best_split(&tar, &score_fn) {
+        if let Ok(( split_info, _)) = df.find_best_split(&tar, &score_fn) {
             println!(
                 "Split col: {}\nSplit val: {}",
                 split_info.name, split_info.value
@@ -191,7 +195,7 @@ mod test {
             assert_eq!(3., split_info.value, "Wrong split point");
         } else {
             panic!("Cannot find split")
-        }
+        };
     }
     #[test]
     fn test_logit_split_score() {
