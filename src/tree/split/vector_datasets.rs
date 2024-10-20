@@ -15,9 +15,9 @@ use super::DataSetRowsError;
 use super::Splittable;
 use super::Target;
 
-impl<T> Splittable for std::vec::Vec<T> 
+impl<T> Splittable for std::vec::Vec<T>
 where
-    T: Copy
+    T: Copy,
 {
     fn len(&self) -> usize {
         self.len()
@@ -135,7 +135,7 @@ where
                 values.find_splits().par_bridge().map(move |split_val| {
                     let mask = values.mask(split_val);
                     let score = score_function.split_score(target, mask.clone())?;
-                    Ok(( SplitInfo::new(name.clone(), split_val.into(), score), mask))
+                    Ok((SplitInfo::new(name.clone(), split_val.into(), score), mask))
                 })
             })
             .reduce(
@@ -186,7 +186,7 @@ mod test {
         let df = HashMap::from([("f1".to_owned(), vec![1., 2., 3.])]);
         let tar = vec![true, true, false];
         let score_fn = ScoringFunction::Logit(Logit::new(0.5));
-        if let Ok(( split_info, _)) = df.find_best_split(&tar, &score_fn) {
+        if let Ok((split_info, _)) = df.find_best_split(&tar, &score_fn) {
             println!(
                 "Split col: {}\nSplit val: {}",
                 split_info.name, split_info.value
