@@ -132,7 +132,7 @@ impl Tree {
             self.prediction.ok_or(TreeError::NoPredictionInLeaf)
         }
     }
-    pub fn predict(&self, samples: impl DataSet) -> Result<Vec<f64>, TreeError> {
+    pub fn predict(&self, samples: &impl DataSet) -> Result<Vec<f64>, TreeError> {
         samples
             .rows()?
             .map(|row| self.predict_single_value(row?.as_slice()))
