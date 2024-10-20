@@ -220,4 +220,33 @@ mod tests {
             "Tree did not fit correctly"
         );
     }
+    #[test]
+    fn test_prediction() {
+        let output_tree = Tree {
+            split_info: Some(SplitInfo::new(
+                "F1".to_string(),
+                2.,
+                SplitScore {
+                    score: -8. / 3.,
+                    null_direction: loss_fn::split_values::NullDirection::Left,
+                },
+            )),
+            left: Some(Box::new(Tree {
+                split_info: None,
+                left: None,
+                right: None,
+                prediction: Some(2.0),
+            })),
+            right: Some(Box::new(Tree {
+                split_info: None,
+                left: None,
+                right: None,
+                prediction: Some(-2.0),
+            })),
+            prediction: None,
+        };
+        let dataset = HashMap::from([("F1".to_string(), vec![1., 3.])]);
+        let pred = output_tree.predict(&dataset).unwrap();
+        assert_eq!(vec![2., -2.], pred, "Wrong predictions")
+    }
 }
