@@ -27,8 +27,8 @@ where
         mask: impl Iterator<Item = Option<bool>>,
         null_direction: NullDirection,
     ) -> (Self, Self) {
-        let mut right_values = Vec::new();
-        let mut left_values = Vec::new();
+        let mut right_values = Vec::with_capacity(self.len());
+        let mut left_values = Vec::with_capacity(self.len());
 
         for (value, should_go_left) in self.into_iter().zip(mask.map(|m| match m {
             Some(b) => b,
@@ -40,7 +40,8 @@ where
                 right_values.push(value.to_owned());
             }
         }
-
+        left_values.shrink_to_fit();
+        right_values.shrink_to_fit();
         (left_values, right_values)
     }
 }
@@ -112,6 +113,8 @@ where
             left.insert(column_name.clone(), left_vals);
             right.insert(column_name.clone(), right_values);
         }
+        left.shrink_to_fit();
+        right.shrink_to_fit();
         (left, right)
     }
 }
