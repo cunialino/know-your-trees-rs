@@ -187,7 +187,7 @@ mod tests {
         let data = HashMap::from([("F1".to_string(), vec![1., 2., 3.])]);
         let target = vec![true, false, false];
         let tree_config = TreeConfig { max_depth: 2 };
-        let score_fn = ScoringFunction::Logit(loss_fn::Logit::new(vec![0.5, 0.5, 0.5]));
+        let score_fn = ScoringFunction::Logit(loss_fn::Logit::new(&[0.5, 0.5, 0.5]));
         let tree = Tree::fit(&data, &target, &tree_config, &score_fn);
         let output_tree = Tree {
             split_info: Some(SplitInfo::new(

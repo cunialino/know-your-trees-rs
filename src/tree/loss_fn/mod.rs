@@ -140,11 +140,11 @@ impl Score<bool> for Gini {
 
 #[derive(Clone)]
 pub struct Logit {
-    pred: Vec<f64>,
+    pred: &[f64],
 }
 
 impl Logit {
-    pub fn new(pred: Vec<f64>) -> Self {
+    pub fn new(pred: &[f64]) -> Self {
         Self { pred }
     }
     fn grad_and_hes(&self, target: bool, pred: f64) -> (f64, f64) {
@@ -242,21 +242,6 @@ impl Score<bool> for ScoringFunction {
         }
     }
 }
-pub enum DiffScoreError {
-    Bu,
-}
-pub trait DiffScore<T>: Target<T> + IntoIterator<Item = T> {
-    fn into_grad_and_hess<F>(
-        &self,
-        loss_fn: F,
-    ) -> Result<(impl Splittable, impl Splittable), DiffScoreError>
-    where
-        F: Fn(T) -> (f64, f64);
-    fn split_score(
-        &self,
-        filter_mask: impl Iterator<Item = Option<bool>>,
-    );
-}
 
 #[cfg(test)]
 mod test {
@@ -264,7 +249,7 @@ mod test {
     #[test]
     fn test_stuff() {
         let init_prd: Vec<f64> = vec![0.5];
-        let logit = Logit::new(init_prd);
+        let logit = Logit::new(init_prd.as_slice());
         let g = logit.pred[0] - 1.;
         let h = logit.pred[0].powi(2);
         let (g_res, h_res) = logit.grad_and_hes(true, logit.pred[0]);
