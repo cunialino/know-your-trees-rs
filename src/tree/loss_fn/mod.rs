@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use split_values::{NullDirection, SplitScore};
 
-use super::split::Target;
+use super::split::{Splittable, Target};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScoreError {
@@ -244,6 +244,21 @@ impl Score<bool> for ScoringFunction {
             ScoringFunction::Logit(l) => l.pred(target),
         }
     }
+}
+pub enum DiffScoreError {
+    Bu,
+}
+pub trait DiffScore<T>: Target<T> + IntoIterator<Item = T> {
+    fn into_grad_and_hess<F>(
+        &self,
+        loss_fn: F,
+    ) -> Result<(impl Splittable, impl Splittable), DiffScoreError>
+    where
+        F: Fn(T) -> (f64, f64);
+    fn split_score(
+        &self,
+        filter_mask: impl Iterator<Item = Option<bool>>,
+    );
 }
 
 #[cfg(test)]
