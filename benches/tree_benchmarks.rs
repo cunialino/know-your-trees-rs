@@ -26,7 +26,7 @@ fn bench_tree_fit_size_10000(c: &mut Criterion) {
     group.warm_up_time(std::time::Duration::from_secs(30));
 
     let tree_config = TreeConfig { max_depth: 3 };
-    let score_fn = ScoringFunction::Logit(Logit::new(0.5));
+    let score_fn = ScoringFunction::Logit(Logit::new(vec![0.5; 10000]));
     group.bench_function("size_10000", |b| {
         b.iter_custom(|iters| {
             let mut elapsed_time = std::time::Duration::new(0, 0);

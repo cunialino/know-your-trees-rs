@@ -138,22 +138,19 @@ impl Score<bool> for Gini {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Logit {
-    pred: f64,
+    pred: Vec<f64>,
 }
 
 impl Logit {
-    pub fn new(pred: f64) -> Self {
-        match pred > 0. && pred < 1. {
-            true => Self { pred },
-            false => panic!("Initial prediction for Logit must be gt than 0 a lt than 1"),
-        }
+    pub fn new(pred: Vec<f64>) -> Self {
+        Self { pred }
     }
-    fn grad_and_hes(&self, target: bool) -> (f64, f64) {
+    fn grad_and_hes(&self, target: bool, pred: f64) -> (f64, f64) {
         let target_val = if target { 1. } else { 0. };
-        let grad = self.pred - target_val;
-        let hess = self.pred * (1.0 - self.pred);
+        let grad = pred - target_val;
+        let hess = pred * (1.0 - pred);
         (grad, hess)
     }
 }
@@ -173,8 +170,8 @@ impl Score<bool> for Logit {
         let mut r_h = 0.;
         let mut n_g = 0.;
         let mut n_h = 0.;
-        for (bool_v, m) in target.iter().zip(filter_mask) {
-            let (gv, hv) = self.grad_and_hes(bool_v);
+        for (bool_v, m, pred) in target.iter().zip(filter_mask).zip(self.pred.iter()).map(|((i1, i2), i3)| (i1, i2, i3)) {
+            let (gv, hv) = self.grad_and_hes(bool_v, pred.to_owned());
             if let Some(true) = m {
                 l_g += gv;
                 l_h += hv;
@@ -204,8 +201,8 @@ impl Score<bool> for Logit {
         }
     }
     fn pred(&self, target: &impl Target<bool>) -> f64 {
-        let (g, h) = target.iter().fold((0., 0.), |(g, h), v| {
-            let (vg, vh) = self.grad_and_hes(v);
+        let (g, h) = target.iter().zip(self.pred.iter()).fold((0., 0.), |(g, h), (v, p)| {
+            let (vg, vh) = self.grad_and_hes(v, p.to_owned());
             (g + vg, h + vh)
         });
         -g / h
@@ -266,11 +263,11 @@ mod test {
     use super::*;
     #[test]
     fn test_stuff() {
-        let init_prd: f64 = 0.5;
+        let init_prd: Vec<f64> = vec![0.5];
         let logit = Logit::new(init_prd);
-        let g = init_prd - 1.;
-        let h = init_prd.powi(2);
-        let (g_res, h_res) = logit.grad_and_hes(true);
+        let g = logit.pred[0] - 1.;
+        let h = logit.pred[0].powi(2);
+        let (g_res, h_res) = logit.grad_and_hes(true, logit.pred[0]);
         assert_eq!(g, g_res, "Wrong grad for Logit");
         assert_eq!(h, h_res, "Wrong hess for Logit");
     }
