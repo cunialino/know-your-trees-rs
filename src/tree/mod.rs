@@ -34,7 +34,7 @@ impl Tree {
         tree_config: &TreeConfig,
         score_fn: &S,
     ) -> Result<Tree, TreeError> {
-        let max_depth = tree_config.max_depth.clone();
+        let max_depth = tree_config.max_depth;
         Tree::build_tree_recursive(samples, target, max_depth, score_fn, None)
     }
     fn build_leaf<T, S: Score<T>>(target: &impl Target<T>, split_function: &S) -> Tree {
@@ -59,10 +59,8 @@ impl Tree {
         match samples.find_best_split(target, split_function) {
             Ok((split_info, mask)) => {
                 //Not really sure why logit does not fit correctly with this one
-                if let Some(_) = split_info_parent {
-                    if split_info.score.score == 0. {
-                        return Ok(Tree::build_leaf(target, split_function));
-                    }
+                if split_info_parent.is_some() && split_info.score.score == 0. {
+                    return Ok(Tree::build_leaf(target, split_function));
                 }
                 let (left_samples, right_samples) =
                     samples.split(mask.clone(), split_info.score.null_direction);
@@ -114,7 +112,7 @@ impl Tree {
             let (_, val) = sample
                 .iter()
                 .find(|(name, _)| split_info.name.eq(name))
-                .expect(format!("Feature {} not in dataset", split_info.name).as_str());
+                .unwrap_or_else(|| panic!("Feature {} not in dataset", split_info.name));
             match val {
                 Some(val) => {
                     if (*val).into() < split_info.value {

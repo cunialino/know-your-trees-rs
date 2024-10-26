@@ -3,7 +3,6 @@ use kyt::tree::loss_fn::{Logit, ScoringFunction};
 use kyt::tree::{Tree, TreeConfig};
 use std::collections::HashMap;
 use std::time::Instant;
-use std::usize;
 
 fn create_sample_data(size: usize) -> (HashMap<String, Vec<f64>>, Vec<bool>) {
     let mut data = HashMap::new();

@@ -30,7 +30,7 @@ where
         let mut right_values = Vec::with_capacity(self.len());
         let mut left_values = Vec::with_capacity(self.len());
 
-        for (value, should_go_left) in self.into_iter().zip(mask.map(|m| match m {
+        for (value, should_go_left) in self.iter().zip(mask.map(|m| match m {
             Some(b) => b,
             None => matches!(null_direction, NullDirection::Left),
         })) {
@@ -50,7 +50,7 @@ impl<T> Feature<T> for std::vec::Vec<T>
 where
     T: Into<f64> + PartialOrd + Copy,
 {
-    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a + Clone {
+    fn mask(&self, split: T) -> impl Iterator<Item = Option<bool>> + '_ + Clone {
         self.iter().map(move |v| match v.partial_cmp(&split) {
             Some(Ordering::Less) => Some(true),
             Some(Ordering::Equal) => Some(false),
@@ -66,7 +66,7 @@ impl<T> Feature<T> for std::vec::Vec<Option<T>>
 where
     T: Into<f64> + PartialOrd + Copy,
 {
-    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a + Clone {
+    fn mask(&self, split: T) -> impl Iterator<Item = Option<bool>> + '_ + Clone {
         self.iter().map(move |v| {
             if let Some(v) = v {
                 match v.partial_cmp(&split) {
@@ -108,7 +108,7 @@ where
 
         let mask: Vec<_> = mask.collect();
 
-        for (column_name, values) in self.into_iter() {
+        for (column_name, values) in self.iter() {
             let (left_vals, right_values) = values.split(mask.iter().copied(), null_direction);
             left.insert(column_name.clone(), left_vals);
             right.insert(column_name.clone(), right_values);
@@ -147,7 +147,7 @@ where
                     (Ok(acc), Ok(el)) => min_sp(acc, el),
                     (Ok(acc), Err(_)) => Ok(acc),
                     (Err(_), Ok(el)) => Ok(el),
-                    (Err(acc), Err(_)) => Err(BestSplitNotFound::from(acc)),
+                    (Err(acc), Err(_)) => Err(acc),
                 },
             )
     }
