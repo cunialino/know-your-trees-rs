@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use split_values::{NullDirection, SplitScore};
 
-use super::split::{Splittable, Target};
+use super::split::Target;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScoreError {
@@ -139,12 +139,12 @@ impl Score<bool> for Gini {
 }
 
 #[derive(Clone)]
-pub struct Logit {
-    pred: &[f64],
+pub struct Logit<'a> {
+    pred: &'a [f64],
 }
 
-impl Logit {
-    pub fn new(pred: &[f64]) -> Self {
+impl<'a> Logit<'a> {
+    pub fn new(pred: &'a [f64]) -> Self {
         Self { pred }
     }
     fn grad_and_hes(&self, target: bool, pred: f64) -> (f64, f64) {
@@ -155,7 +155,7 @@ impl Logit {
     }
 }
 
-impl Score<bool> for Logit {
+impl<'a> Score<bool> for Logit<'a> {
     fn split_score(
         &self,
         target: &impl Target<bool>,
@@ -209,12 +209,12 @@ impl Score<bool> for Logit {
     }
 }
 
-pub enum ScoringFunction {
-    Logit(Logit),
+pub enum ScoringFunction<'a> {
+    Logit(Logit<'a>),
     Gini(Gini),
 }
 
-impl std::fmt::Display for ScoringFunction {
+impl<'a> std::fmt::Display for ScoringFunction<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let displayable = match self {
             ScoringFunction::Logit(_) => "Logit",
@@ -224,7 +224,7 @@ impl std::fmt::Display for ScoringFunction {
     }
 }
 
-impl Score<bool> for ScoringFunction {
+impl<'a> Score<bool> for ScoringFunction<'a> {
     fn split_score(
         &self,
         target: &impl Target<bool>,

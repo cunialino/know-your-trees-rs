@@ -188,7 +188,7 @@ mod test {
     fn test_logit_split() {
         let df = HashMap::from([("f1".to_owned(), vec![1., 2., 3.])]);
         let tar = vec![true, true, false];
-        let score_fn = ScoringFunction::Logit(Logit::new(vec![0.5, 0.5, 0.5]));
+        let score_fn = ScoringFunction::Logit(Logit::new(&[0.5, 0.5, 0.5]));
         if let Ok((split_info, _)) = df.find_best_split(&tar, &score_fn) {
             println!(
                 "Split col: {}\nSplit val: {}",
@@ -204,7 +204,7 @@ mod test {
     fn test_logit_split_score() {
         let tar = vec![true, true, false];
         let init_prd: f64 = 0.5;
-        let score_fn = ScoringFunction::Logit(Logit::new(vec![0.5, 0.5, 0.5]));
+        let score_fn = ScoringFunction::Logit(Logit::new(&[0.5, 0.5, 0.5]));
         let g1 = init_prd - 1.;
         let g2 = init_prd - 1.;
         let g3 = init_prd;
