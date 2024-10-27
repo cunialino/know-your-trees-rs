@@ -1,0 +1,125 @@
+@startuml
+
+package "src/tree" {
+    package loss_fn {
+        package split_values {
+            class NullDirection {
+                +Left
+                +Right
+            }
+
+            class SplitScore {
+                +score : f64
+                +null_direction : NullDirection
+            }
+
+            class SplitInfo {
+                +name : String
+                +value : f64
+                +score : SplitScore
+            }
+
+            SplitScore *-- NullDirection : null_direction
+            SplitInfo *-- SplitScore : score
+        }
+
+        class ScoreError {
+            +NanReturn
+            +PerfectSplit
+            +InvalidSplit(size: usize)
+        }
+
+        interface Score<T> {
+            +split_score(target: Target<T>, filter_mask: Iterator<Option<bool>>) : Result<SplitScore, ScoreError>
+            +pred(target: Target<T>) : f64
+        }
+
+        class Gini {
+            +gini(counts: HashMap<bool, usize>, total: f64) : f64
+        }
+
+        Score --> Target : uses
+        Score --> SplitScore : result
+        Gini --> Score : implements
+    }
+
+    package split {
+        class DataSet
+        class Target
+        class DataSetRowsError {
+            +IllFormedColumn(column: String, count: usize)
+            +EmptyDF
+        }
+
+        class BestSplitNotFound {
+            +Score(error: ScoreError)
+            +ScoreNotComparable(SplitInfo, SplitInfo)
+            +NoSplitRequired
+        }
+
+        interface Splittable {
+            +len() : usize
+            +split(mask: Iterator<Option<bool>>, null_direction: NullDirection) : (Self, Self)
+        }
+
+        interface Feature<T: PartialOrd> extends Splittable {
+            +find_splits() : Iterator<Item = T>
+            +mask(split: T) : Iterator<Item = Option<bool>>
+        }
+
+        interface Target<T> extends Splittable, Sync {
+            +iter() : Iterator<Item = T>
+        }
+
+        interface DataSet extends Splittable {
+            +find_best_split(target: Target<T>, score_function: Score<T>) : Result<(SplitInfo, Iterator<Option<bool>>), BestSplitNotFound>
+            +num_rows() : Result<usize, DataSetRowsError>
+            +rows() : Result<Iterator<Vec<(&str, Option<f64>)>>, DataSetRowsError>
+        }
+
+        DataSetRowsError "num_rows" -->  "Err" IllFormedColumn : return
+        DataSet "find_best_split" --> "Err" BestSplitNotFound : return
+        DataSet --> SplitInfo : returns
+        DataSet --> Target : uses
+        DataSet --> Score : uses
+        BestSplitNotFound --> ScoreError : uses
+        BestSplitNotFound --> SplitInfo : uses
+    }
+
+    class TreeConfig {
+        +max_depth : usize
+    }
+
+    class TreeError {
+        +DataSetRowsError(error: DataSetRowsError)
+        +CouldNotFindFeature(feature: String)
+        +NoPredictionInLeaf
+    }
+
+    class Tree {
+        +split_info : Option<SplitInfo>
+        +left : Option<Box<Tree>>
+        +right : Option<Box<Tree>>
+        +prediction : Option<f64>
+        +fit<T, S: Score<T>>(samples: &impl DataSet, target: &impl Target<T>, tree_config: &TreeConfig, score_fn: &S) : Result<Tree, TreeError>
+    }
+
+    TreeConfig --> Tree : config
+    TreeError --> DataSetRowsError : uses
+    Tree --> SplitInfo : uses
+    Tree --> DataSet : input
+    Tree --> Target : input
+    Tree --> Score : uses
+
+}
+
+package "src/ensembles" {
+  package "gb" {
+    class GradientBoosting {
+      +trees : Vec<Tree>
+      +alpha : f64
+      +fit(samples: DataSet, target: Target<T>, tree_config: TreeConfig, score_fn: Score<T>) : Result<Tree, TreeError>
+    }
+  }
+}
+@enduml
