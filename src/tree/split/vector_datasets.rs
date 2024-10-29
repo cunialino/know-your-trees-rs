@@ -161,19 +161,21 @@ where
     fn rows(
         &self,
     ) -> Result<
-        impl Iterator<Item = Result<Vec<(&str, Option<impl Into<f64> + Copy>)>, DataSetRowsError>>,
+        impl Iterator<Item = impl Iterator<Item = (&str, Option<impl Into<f64> + Copy>)> + Clone>,
         DataSetRowsError,
     > {
         let indices = 0..self.num_rows()?;
         Ok(indices.into_iter().map(|idx| {
-            self.iter()
-                .map(|(name, col)| match col.get(idx) {
-                    Some(v) => Ok((name.as_str(), Some(v.to_owned()))),
-                    None => Err(DataSetRowsError::IllFormedColumn(name.to_owned(), idx)),
-                })
-                // Should be ok to collect here, we are collecting
-                // at most the number of columns of df (usually not very high)
-                .collect()
+            self.iter().map(move |(name, col)| {
+                (
+                    name.as_str(),
+                    Some(
+                        col.get(idx.clone())
+                            .expect("DataSet is ill formed, not all columns have the same length")
+                            .to_owned(),
+                    ),
+                )
+            })
         }))
     }
 }

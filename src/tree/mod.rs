@@ -9,7 +9,7 @@ pub struct TreeConfig {
     pub max_depth: usize,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum TreeError {
     #[error("Tree Error: {0}")]
     DataSetRowsError(#[from] crate::tree::split::DataSetRowsError),
@@ -100,22 +100,21 @@ impl Tree {
             },
         }
     }
-    fn predict_single_value<'a, T: Into<f64> + Copy>(
+    fn predict_single_value<'a, T: Into<f64> + Copy + Sized>(
         &'a self,
-        sample: &'a [(&'a str, Option<T>)],
+        sample: impl Iterator<Item = (&'a str, Option<T>)> + Clone,
     ) -> Result<f64, TreeError> {
         if let (Some(split_info), Some(l), Some(r)) = (
             self.split_info.as_ref(),
             self.left.as_ref(),
             self.right.as_ref(),
         ) {
-            let (_, val) = sample
-                .iter()
+            let (_, val) = sample.clone()
                 .find(|(name, _)| split_info.name.eq(name))
                 .unwrap_or_else(|| panic!("Feature {} not in dataset", split_info.name));
             match val {
                 Some(val) => {
-                    if (*val).into() < split_info.value {
+                    if val.into() < split_info.value {
                         l.predict_single_value(sample)
                     } else {
                         r.predict_single_value(sample)
@@ -130,11 +129,14 @@ impl Tree {
             self.prediction.ok_or(TreeError::NoPredictionInLeaf)
         }
     }
-    pub fn predict(&self, samples: &impl DataSet) -> Result<Vec<f64>, TreeError> {
-        samples
-            .rows()?
-            .map(|row| self.predict_single_value(row?.as_slice()))
-            .collect()
+    pub fn predict<'a>(
+        &'a self,
+        samples: &'a impl DataSet,
+    ) -> Result<impl Iterator<Item = Result<f64, TreeError>> + 'a, TreeError> {
+
+        Ok(samples.rows()?.map(|row| {
+            self.predict_single_value(row)
+        }))
     }
 }
 
@@ -245,6 +247,10 @@ mod tests {
         };
         let dataset = HashMap::from([("F1".to_string(), vec![1., 3.])]);
         let pred = output_tree.predict(&dataset).unwrap();
-        assert_eq!(vec![2., -2.], pred, "Wrong predictions")
+        assert_eq!(
+            vec![Ok(2.), Ok(-2.)],
+            pred.collect::<Vec<_>>(),
+            "Wrong predictions"
+        )
     }
 }

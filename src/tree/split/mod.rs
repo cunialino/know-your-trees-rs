@@ -15,7 +15,7 @@ pub enum BestSplitNotFound {
     NoSplitRequired,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum DataSetRowsError {
     #[error("Dataset Row Error: Ill formed dataframe, {0}, {1}")]
     IllFormedColumn(String, usize),
@@ -51,7 +51,7 @@ pub trait DataSet: Splittable {
     fn rows(
         &self,
     ) -> Result<
-        impl Iterator<Item = Result<Vec<(&str, Option<impl Into<f64> + Copy>)>, DataSetRowsError>>,
+        impl Iterator<Item = impl Iterator<Item = (&str, Option<impl Into<f64> + Copy>)> + Clone>,
         DataSetRowsError,
     >;
 }
