@@ -1,0 +1,38 @@
+@startuml
+!include datasetrowerror.puml
+!include ../loss_fn/split_info.puml
+
+package "src/tree" as TREE {
+  package split as SPLIT {
+      interface Splittable {
+          +len() : usize
+          +split(mask: Iterator<Option<bool>>, null_direction: NullDirection) : (Self, Self)
+      }
+
+      interface Feature<T: PartialOrd> extends Splittable {
+          +find_splits() : Iterator<Item = T>
+          +mask(split: T) : Iterator<Item = Option<bool>>
+      }
+
+      interface Target<T> extends Splittable, Sync {
+          +iter() : Iterator<Item = T>
+      }
+      interface DataSet extends Splittable {
+          +find_best_split(target: Target<T>, score_function: Score<T>) : Result<(SplitInfo, Iterator<Option<bool>>), BestSplitNotFound>
+          +num_rows() : Result<usize, DataSetRowsError>
+          +rows() : Result<Iterator<Vec<(&str, Option<f64>)>>, DataSetRowsError>
+      }
+
+      enum BestSplitNotFound {
+          +Score(error: ScoreError)
+          +ScoreNotComparable(SplitInfo, SplitInfo)
+          +NoSplitRequired
+      }
+
+      DataSet "rows" *-- "Err" DataSetRowsError: returns
+      DataSet "find_best_split" *-- "Err" BestSplitNotFound: returns
+      DataSet "find_best_split.0" *-- "Ok" SplitInfo: returns
+      DataSet "num_rows" *-- "Err" DataSetRowsError: returns
+  }
+}
+@enduml

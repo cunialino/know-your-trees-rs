@@ -1,0 +1,30 @@
+@startuml
+
+!include split/datasetrowerror.puml
+
+
+package "src/tree" as TREE {
+    class TreeConfig {
+        +max_depth : usize
+    }
+
+    enum TreeError {
+        +DataSetRowsError(error: DataSetRowsError)
+        +CouldNotFindFeature(feature: String)
+        +NoPredictionInLeaf
+    }
+
+    class Tree {
+        +split_info : Option<SplitInfo>
+        +left : Option<Box<Tree>>
+        +right : Option<Box<Tree>>
+        +prediction : Option<f64>
+        +fit<T, S: Score<T>>(samples: &impl DataSet, target: &impl Target<T>, tree_config: &TreeConfig, score_fn: &S) : Result<Tree, TreeError>
+    }
+
+    Tree "fit" *-- "Err" TreeError: returns
+    Tree "fit" *-- "Ok" Tree: returns
+    Tree <-- TreeConfig: configures
+    TreeError *-- DataSetRowsError: DataSetRowsError
+}
+@enduml

@@ -1,0 +1,11 @@
+@startuml
+
+package "src/tree" as TREE {
+  package split as SPLIT {
+      enum DataSetRowsError {
+          +IllFormedColumn(column: String, count: usize)
+          +EmptyDF
+      }
+  }
+}
+@enduml

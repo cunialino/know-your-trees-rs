@@ -1,0 +1,13 @@
+@startuml
+package "src/tree" as TREE {
+  package loss_fn as LOSS_FN{
+      package split_values {
+          class SplitInfo {
+              +name : String
+              +value : f64
+              +score : SplitScore
+          }
+      }
+  }
+}
+@enduml

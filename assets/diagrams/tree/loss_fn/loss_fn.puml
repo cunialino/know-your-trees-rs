@@ -1,0 +1,52 @@
+@startuml
+!include split_info.puml
+package "src/tree" as TREE {
+  package loss_fn as LOSS_FN{
+      package split_values {
+          enum NullDirection {
+              +Left
+              +Right
+          }
+
+          class SplitScore {
+              +score : f64
+              +null_direction : NullDirection
+          }
+
+          class SplitInfo {
+              +name : String
+              +value : f64
+              +score : SplitScore
+          }
+
+          SplitScore *-- NullDirection : null_direction
+          SplitInfo *-- SplitScore : score
+      }
+
+      enum ScoreError {
+          +NanReturn
+          +PerfectSplit
+          +InvalidSplit(size: usize)
+      }
+
+
+
+      interface Score<T> {
+          +split_score(target: Target<T>, filter_mask: Iterator<Option<bool>>) : Result<SplitScore, ScoreError>
+          +pred(target: Target<T>) : f64
+      }
+
+      Score "split_score" *-- "Ok" SplitScore: returns
+      Score "split_score" *-- "Err" ScoreError: returns
+
+      class Gini implements Score<bool> {
+          +gini(counts: HashMap<bool, usize>, total: f64) : f64
+      }
+
+      class Logit implements Score<bool> {
+          -preds: Vec<f64>
+          +grad_and_hes(val: bool, pred: f64) : f64
+      }
+  }
+}
+@enduml
