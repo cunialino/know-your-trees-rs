@@ -34,7 +34,7 @@ pub trait Splittable: Sized {
 
 pub trait Feature<T: PartialOrd>: Splittable {
     fn find_splits(&self) -> impl Iterator<Item = T> + '_;
-    fn mask<'a>(&'a self, split: T) -> impl Iterator<Item = Option<bool>> + 'a + Clone;
+    fn mask(&self, split: T) -> impl Iterator<Item = Option<bool>> + Clone;
 }
 
 pub trait Target<T>: Splittable + Sync {
