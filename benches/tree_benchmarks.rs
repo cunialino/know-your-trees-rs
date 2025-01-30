@@ -3,7 +3,6 @@ use kyt::tree::loss_fn::{Logit, ScoringFunction};
 use kyt::tree::{Tree, TreeConfig};
 use std::collections::HashMap;
 use std::time::Instant;
-use std::usize;
 
 fn create_sample_data(size: usize) -> (HashMap<String, Vec<f64>>, Vec<bool>) {
     let mut data = HashMap::new();
@@ -22,6 +21,11 @@ fn create_sample_data(size: usize) -> (HashMap<String, Vec<f64>>, Vec<bool>) {
 }
 
 fn bench_tree_fit_size_10000(c: &mut Criterion) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build_global()
+        .unwrap();
+
     let mut group = c.benchmark_group("Tree::");
     group.warm_up_time(std::time::Duration::from_secs(30));
 
