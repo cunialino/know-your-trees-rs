@@ -4,6 +4,8 @@ use split::{DataSet, Target};
 pub mod loss_fn;
 pub mod split;
 
+pub mod simpler;
+
 #[derive(Debug, Default)]
 pub struct TreeConfig {
     pub max_depth: usize,
